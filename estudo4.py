@@ -8,6 +8,7 @@ import os
 from dotenv import load_dotenv
 from pathlib import Path
 import plotly.express as px
+import plotly.graph_objects as go
 
 # =============================
 # Carregar variáveis de ambiente
@@ -158,24 +159,40 @@ def checklist_qualidade():
         st.info("Nenhum código disponível para inspeção. Todos já foram inspecionados.")
         return
 
-    numero_serie = st.selectbox("Selecione o Número de Série para Inspeção", codigos_disponiveis)
+    # Inicializa o código de série atual no session_state
+    if "codigo_atual" not in st.session_state:
+        st.session_state["codigo_atual"] = codigos_disponiveis[0]
+
+    numero_serie = st.selectbox(
+        "Selecione o Número de Série para Inspeção",
+        codigos_disponiveis,
+        index=codigos_disponiveis.index(st.session_state["codigo_atual"])
+    )
 
     resultados = {}
     for item in itens:
         st.markdown(f"### {item}")
-        # Nenhum item aparece selecionado inicialmente
         status = st.radio(f"Status - {item}", ["Conforme", "Não Conforme", "N/A"], index=2, key=f"{numero_serie}_{item}")
         obs = st.text_area(f"Observações - {item}", key=f"obs_{numero_serie}_{item}")
         resultados[item] = {"status": status, "obs": obs}
 
-    foto_etiqueta = st.file_uploader("Foto da Etiqueta (Opcional)", type=["png", "jpg", "jpeg"])
-
     if st.button("Salvar Checklist"):
         if all(r['status'] == "N/A" for r in resultados.values()):
             st.error("Checklist inválido: todos os itens estão como N/A.")
-            return
-        salvar_checklist(numero_serie, resultados, st.session_state['usuario'], foto_etiqueta)
-        st.experimental_rerun()
+        else:
+            salvar_checklist(numero_serie, resultados, st.session_state['usuario'])
+            st.success(f"Checklist do Nº de Série {numero_serie} salvo com sucesso!")
+
+            # Atualiza automaticamente para o próximo código disponível
+            codigos_disponiveis = [c for c in codigos_disponiveis if c != numero_serie]
+            if codigos_disponiveis:
+                st.session_state["codigo_atual"] = codigos_disponiveis[0]
+                st.experimental_set_query_params(updated=str(datetime.datetime.now()))
+            else:
+                st.info("Todos os códigos foram inspecionados hoje.")
+
+
+
 
 # =============================
 # Reinspeção
@@ -199,7 +216,6 @@ def reinspecao():
             resultados = {}
             for item in itens:
                 st.markdown(f"### {item}")
-                # Nenhum item aparece selecionado inicialmente
                 status = st.radio(f"Status - {item} (Reinspeção)", ["Conforme", "Não Conforme", "N/A"], index=2, key=f"re_{serie_sel}_{item}")
                 obs = st.text_area(f"Observações - {item}", key=f"re_obs_{serie_sel}_{item}")
                 resultados[item] = {"status": status, "obs": obs}
@@ -381,7 +397,34 @@ def dashboard_qualidade():
     if not df_nc.empty:
         pareto = df_nc.groupby("item")["numero_serie"].count().sort_values(ascending=False).reset_index()
         pareto.columns = ["Item", "Quantidade"]
-        fig = px.bar(pareto, x="Item", y="Quantidade", title="Pareto das Não Conformidades")
+        pareto["%"] = pareto["Quantidade"].cumsum() / pareto["Quantidade"].sum() * 100
+
+        fig = go.Figure()
+        # Barras
+        fig.add_trace(go.Bar(
+            x=pareto["Item"],
+            y=pareto["Quantidade"],
+            text=pareto["Quantidade"],
+            textposition='auto',
+            name="Quantidade NC"
+        ))
+        # Linha de percentual
+        fig.add_trace(go.Scatter(
+            x=pareto["Item"],
+            y=pareto["%"],
+            mode="lines+markers",
+            name="% Acumulado",
+            yaxis="y2"
+        ))
+
+        # Layout
+        fig.update_layout(
+            title="Pareto das Não Conformidades",
+            yaxis=dict(title="Quantidade NC"),
+            yaxis2=dict(title="%", overlaying="y", side="right", range=[0, 110]),
+            legend=dict(x=0.8, y=1.1)
+        )
+
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("Nenhuma não conformidade registrada.")

@@ -127,10 +127,13 @@ def login():
         if st.sidebar.button("Sair"):
             st.session_state['logado'] = False
             st.session_state['usuario'] = None
-            st.experimental_rerun()
+            st.experimental_set_query_params()  # substituindo experimental_rerun
 
 # =============================
 # Checklist
+# =============================
+# =============================
+# Checklist com st.form
 # =============================
 def checklist_qualidade():
     st.markdown("## ✔️ Checklist de Qualidade")
@@ -159,7 +162,6 @@ def checklist_qualidade():
         st.info("Nenhum código disponível para inspeção. Todos já foram inspecionados.")
         return
 
-    # Inicializa o código de série atual no session_state
     if "codigo_atual" not in st.session_state:
         st.session_state["codigo_atual"] = codigos_disponiveis[0]
 
@@ -169,33 +171,32 @@ def checklist_qualidade():
         index=codigos_disponiveis.index(st.session_state["codigo_atual"])
     )
 
-    resultados = {}
-    for item in itens:
-        st.markdown(f"### {item}")
-        status = st.radio(f"Status - {item}", ["Conforme", "Não Conforme", "N/A"], index=2, key=f"{numero_serie}_{item}")
-        obs = st.text_area(f"Observações - {item}", key=f"obs_{numero_serie}_{item}")
-        resultados[item] = {"status": status, "obs": obs}
+    with st.form(key=f"form_checklist_{numero_serie}"):
+        resultados = {}
+        for item in itens:
+            st.markdown(f"### {item}")
+            status = st.radio(f"Status - {item}", ["Conforme", "Não Conforme", "N/A"], index=2, key=f"{numero_serie}_{item}")
+            obs = st.text_area(f"Observações - {item}", key=f"obs_{numero_serie}_{item}")
+            resultados[item] = {"status": status, "obs": obs}
 
-    if st.button("Salvar Checklist"):
-        if all(r['status'] == "N/A" for r in resultados.values()):
-            st.error("Checklist inválido: todos os itens estão como N/A.")
-        else:
-            salvar_checklist(numero_serie, resultados, st.session_state['usuario'])
-            st.success(f"Checklist do Nº de Série {numero_serie} salvo com sucesso!")
+        submit_button = st.form_submit_button("Salvar Checklist")
 
-            # Atualiza automaticamente para o próximo código disponível
-            codigos_disponiveis = [c for c in codigos_disponiveis if c != numero_serie]
-            if codigos_disponiveis:
-                st.session_state["codigo_atual"] = codigos_disponiveis[0]
-                st.experimental_set_query_params(updated=str(datetime.datetime.now()))
+        if submit_button:
+            if all(r['status'] == "N/A" for r in resultados.values()):
+                st.error("Checklist inválido: todos os itens estão como N/A.")
             else:
-                st.info("Todos os códigos foram inspecionados hoje.")
+                salvar_checklist(numero_serie, resultados, st.session_state['usuario'])
+                st.success(f"Checklist do Nº de Série {numero_serie} salvo com sucesso!")
 
-
-
+                codigos_disponiveis = [c for c in codigos_disponiveis if c != numero_serie]
+                if codigos_disponiveis:
+                    st.session_state["codigo_atual"] = codigos_disponiveis[0]
+                    st.experimental_set_query_params(updated=str(datetime.datetime.now()))
+                else:
+                    st.info("Todos os códigos foram inspecionados hoje.")
 
 # =============================
-# Reinspeção
+# Reinspeção com st.form
 # =============================
 def reinspecao():
     df = carregar_checklists()
@@ -213,50 +214,71 @@ def reinspecao():
         serie_sel = st.selectbox("Selecione o Nº de Série reprovado", reprovados)
 
         if serie_sel:
-            resultados = {}
-            for item in itens:
-                st.markdown(f"### {item}")
-                status = st.radio(f"Status - {item} (Reinspeção)", ["Conforme", "Não Conforme", "N/A"], index=2, key=f"re_{serie_sel}_{item}")
-                obs = st.text_area(f"Observações - {item}", key=f"re_obs_{serie_sel}_{item}")
-                resultados[item] = {"status": status, "obs": obs}
+            with st.form(key=f"form_reinspecao_{serie_sel}"):
+                resultados = {}
+                for item in itens:
+                    st.markdown(f"### {item}")
+                    status = st.radio(f"Status - {item} (Reinspeção)", ["Conforme", "Não Conforme", "N/A"], index=2, key=f"re_{serie_sel}_{item}")
+                    obs = st.text_area(f"Observações - {item}", key=f"re_obs_{serie_sel}_{item}")
+                    resultados[item] = {"status": status, "obs": obs}
 
-            if st.button("Salvar Reinspeção"):
-                salvar_checklist(serie_sel, resultados, st.session_state['usuario'], reinspecao=True)
+                submit_button = st.form_submit_button("Salvar Reinspeção")
+
+                if submit_button:
+                    salvar_checklist(serie_sel, resultados, st.session_state['usuario'], reinspecao=True)
+                    st.success(f"Reinspeção do Nº de Série {serie_sel} salva com sucesso!")
     else:
         st.info("Nenhum produto reprovado para reinspeção.")
 
 # =============================
-# Histórico de Produção
+# Histórico de Produção com filtro de data
 # =============================
 def mostrar_historico_producao():
     st.markdown("## 📚 Histórico de Produção")
     df_apont = carregar_apontamentos()
     if df_apont.empty:
         st.info("Nenhum apontamento registrado até agora.")
-    else:
-        df_apont = df_apont.sort_values("data_hora", ascending=False)
-        st.dataframe(df_apont[["numero_serie", "data_hora"]], use_container_width=True)
+        return
+
+    # Filtro de data
+    data_inicio = st.date_input("Data Inicial", value=df_apont["data_hora"].min().date())
+    data_fim = st.date_input("Data Final", value=df_apont["data_hora"].max().date())
+
+    df_filtrado = df_apont[
+        (df_apont["data_hora"].dt.date >= data_inicio) &
+        (df_apont["data_hora"].dt.date <= data_fim)
+    ].sort_values("data_hora", ascending=False)
+
+    st.dataframe(df_filtrado[["numero_serie", "data_hora"]], use_container_width=True)
 
 # =============================
-# Histórico de Qualidade
+# Histórico de Qualidade com filtro de data
 # =============================
 def mostrar_historico_qualidade():
     st.markdown("## 📚 Histórico de Inspeção de Qualidade")
     df_checks = carregar_checklists()
     if df_checks.empty:
         st.info("Nenhum checklist registrado até agora.")
-    else:
-        df_checks = df_checks.sort_values("data_hora", ascending=False)
-        st.dataframe(
-            df_checks[[
-                "numero_serie", "item", "status", "observacoes",
-                "inspetor", "produto_reprovado", "reinspecao", "data_hora"
-            ]],
-            use_container_width=True
-        )
+        return
+
+    data_inicio = st.date_input("Data Inicial", value=df_checks["data_hora"].min().date())
+    data_fim = st.date_input("Data Final", value=df_checks["data_hora"].max().date())
+
+    df_filtrado = df_checks[
+        (df_checks["data_hora"].dt.date >= data_inicio) &
+        (df_checks["data_hora"].dt.date <= data_fim)
+    ].sort_values("data_hora", ascending=False)
+
+    st.dataframe(
+        df_filtrado[[
+            "numero_serie", "item", "status", "observacoes",
+            "inspetor", "produto_reprovado", "reinspecao", "data_hora"
+        ]],
+        use_container_width=True
+    )
 
 # =============================
-# Dashboard de Produção
+# Dashboard de Produção (mantido completo)
 # =============================
 def painel_dashboard():
     def processar_codigo_barras():
@@ -272,34 +294,37 @@ def painel_dashboard():
     st.markdown("# 📊 Painel de Apontamentos")
     st.text_input("Leia o Código de Barras aqui:", key="codigo_barras", on_change=processar_codigo_barras)
 
+    # ================= Filtro de Datas =================
     hoje = datetime.datetime.now(TZ).date()
-    hora_atual = datetime.datetime.now(TZ).hour
-    df_apont = carregar_apontamentos()
-
-    if not df_apont.empty:
-        start_of_day = TZ.localize(datetime.datetime.combine(hoje, datetime.time.min))
-        end_of_day = TZ.localize(datetime.datetime.combine(hoje, datetime.time.max))
-        df_hoje = df_apont[
-            (df_apont["data_hora"] >= start_of_day) &
-            (df_apont["data_hora"] <= end_of_day)
-        ]
+    data_selecionada = st.date_input("Selecione o intervalo de datas:", value=(hoje, hoje))
+    if isinstance(data_selecionada, tuple):
+        data_inicio, data_fim = data_selecionada
     else:
-        df_hoje = pd.DataFrame()
+        data_inicio = data_fim = data_selecionada
 
-    total_lidos = len(df_hoje)
+    df_apont = carregar_apontamentos()
+    if not df_apont.empty:
+        start_date = TZ.localize(datetime.datetime.combine(data_inicio, datetime.time.min))
+        end_date = TZ.localize(datetime.datetime.combine(data_fim, datetime.time.max))
+        df_filtrado = df_apont[(df_apont["data_hora"] >= start_date) & (df_apont["data_hora"] <= end_date)]
+    else:
+        df_filtrado = pd.DataFrame()
+
+    total_lidos = len(df_filtrado)
     meta_por_hora = 26
+    hora_atual = datetime.datetime.now(TZ).hour
     horas_passadas = max(hora_atual - 6, 1)
     meta_acumulada = meta_por_hora * horas_passadas
     atraso = meta_acumulada - total_lidos if total_lidos < meta_acumulada else 0
 
     df_checks = carregar_checklists()
-    if not df_checks.empty and not df_hoje.empty:
-        df_checks_hoje = df_checks[df_checks["numero_serie"].isin(df_hoje["numero_serie"].unique())]
+    if not df_checks.empty and not df_filtrado.empty:
+        df_checks_filtrado = df_checks[df_checks["numero_serie"].isin(df_filtrado["numero_serie"].unique())]
     else:
-        df_checks_hoje = pd.DataFrame()
+        df_checks_filtrado = pd.DataFrame()
 
-    if not df_checks_hoje.empty:
-        series_with_checks = df_checks_hoje["numero_serie"].unique()
+    if not df_checks_filtrado.empty:
+        series_with_checks = df_checks_filtrado["numero_serie"].unique()
         aprovados = 0
         for serie in series_with_checks:
             checks_all_for_serie = df_checks[df_checks["numero_serie"] == serie].sort_values("data_hora")
@@ -350,7 +375,7 @@ def painel_dashboard():
     col_prod = st.columns(len(horarios))
 
     for i, h in enumerate(horarios):
-        produzido = len(df_hoje[df_hoje["data_hora"].dt.hour == h.hour])
+        produzido = len(df_filtrado[df_filtrado["data_hora"].dt.hour == h.hour])
         cor_meta = "#4CAF50"  # verde
         cor_prod = "#000000"  # preto
         col_meta[i].markdown(f"<div style='background-color:{cor_meta};color:white;padding:10px;border-radius:5px;text-align:center'><b>{h.strftime('%H:%M')}<br>{meta_por_hora}</b></div>", unsafe_allow_html=True)
@@ -367,15 +392,11 @@ def dashboard_qualidade():
         st.info("Nenhum checklist registrado ainda.")
         return
 
-    # Total inspecionado
     total_inspecionado = df_checks["numero_serie"].nunique()
-
-    # % aprovação
     ultimos_checks = df_checks.sort_values("data_hora").groupby("numero_serie").tail(1)
     aprovados = ultimos_checks[ultimos_checks["produto_reprovado"]=="Não"]["numero_serie"].nunique()
     perc_aprov = (aprovados / total_inspecionado *100) if total_inspecionado>0 else 0
 
-    # ========= Cards grandes =========
     col1, col2 = st.columns(2)
     with col1:
         st.markdown(f"""
@@ -392,7 +413,6 @@ def dashboard_qualidade():
             </div>
         """, unsafe_allow_html=True)
 
-    # ========= Pareto das não conformidades =========
     df_nc = df_checks[df_checks["status"]=="Não Conforme"]
     if not df_nc.empty:
         pareto = df_nc.groupby("item")["numero_serie"].count().sort_values(ascending=False).reset_index()
@@ -400,7 +420,6 @@ def dashboard_qualidade():
         pareto["%"] = pareto["Quantidade"].cumsum() / pareto["Quantidade"].sum() * 100
 
         fig = go.Figure()
-        # Barras
         fig.add_trace(go.Bar(
             x=pareto["Item"],
             y=pareto["Quantidade"],
@@ -408,7 +427,6 @@ def dashboard_qualidade():
             textposition='auto',
             name="Quantidade NC"
         ))
-        # Linha de percentual
         fig.add_trace(go.Scatter(
             x=pareto["Item"],
             y=pareto["%"],
@@ -417,7 +435,6 @@ def dashboard_qualidade():
             yaxis="y2"
         ))
 
-        # Layout
         fig.update_layout(
             title="Pareto das Não Conformidades",
             yaxis=dict(title="Quantidade NC"),
@@ -457,9 +474,9 @@ def app():
     elif menu == "Dashboard de Qualidade":
         dashboard_qualidade()
 
-
 if __name__ == "__main__":
     app()
+
 
 
 

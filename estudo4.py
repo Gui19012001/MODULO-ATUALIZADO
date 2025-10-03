@@ -278,6 +278,9 @@ def mostrar_historico_qualidade():
 # Dashboard Produção
 # =============================
 def painel_dashboard():
+    st.markdown("# 📊 Painel de Apontamentos")
+
+    # ================= Campo Código de Barras =================
     def processar_codigo_barras():
         codigo_barras = st.session_state["codigo_barras"]
         if codigo_barras:
@@ -292,7 +295,6 @@ def painel_dashboard():
                 st.warning(f"Código {codigo_barras} já registrado hoje ou erro.")
             st.session_state["codigo_barras"] = ""
 
-    st.markdown("# 📊 Painel de Apontamentos")
     st.text_input("Leia o Código de Barras aqui:", key="codigo_barras", on_change=processar_codigo_barras)
 
     # ================= Filtro de Datas =================
@@ -336,7 +338,7 @@ def painel_dashboard():
 
     atraso = meta_acumulada - total_lidos if total_lidos < meta_acumulada else 0
 
-    # ================= % de aprovação apenas para o mesmo dia =================
+    # ================= % de aprovação =================
     df_checks = carregar_checklists()
     if not df_checks.empty and not df_filtrado.empty:
         df_checks_filtrado = df_checks[df_checks["numero_serie"].isin(df_filtrado["numero_serie"].unique())]
@@ -370,27 +372,61 @@ def painel_dashboard():
 
     # ========= Cartões grandes =========
     col1, col2, col3 = st.columns(3)
+    altura_cartao = "220px"  # grande e uniforme
+
     with col1:
         st.markdown(f"""
-            <div style="background-color:#DDE3FF;padding:20px;border-radius:15px;text-align:center">
+            <div style="
+                background-color:#DDE3FF;
+                height:{altura_cartao};
+                display:flex;
+                flex-direction:column;
+                justify-content:center;
+                align-items:center;
+                border-radius:15px;
+                text-align:center;
+                padding:10px;
+            ">
                 <h3>TOTAL PRODUZIDO</h3>
                 <h1>{total_lidos}</h1>
             </div>
         """, unsafe_allow_html=True)
+
     with col2:
         st.markdown(f"""
-            <div style="background-color:#E5F5E5;padding:20px;border-radius:15px;text-align:center">
+            <div style="
+                background-color:#E5F5E5;
+                height:{altura_cartao};
+                display:flex;
+                flex-direction:column;
+                justify-content:center;
+                align-items:center;
+                border-radius:15px;
+                text-align:center;
+                padding:10px;
+            ">
                 <h3>% APROVAÇÃO</h3>
                 <h1>{aprovacao_perc:.2f}%</h1>
                 <p>Total inspecionado: {total_inspecionado}</p>
                 <p>Total reprovado: {total_reprovados}</p>
             </div>
         """, unsafe_allow_html=True)
+
     with col3:
         cor = "#FFCCCC" if atraso > 0 else "#DFF2DD"
         texto = f"Atraso: {atraso}" if atraso > 0 else "Dentro da Meta"
         st.markdown(f"""
-            <div style="background-color:{cor};padding:20px;border-radius:15px;text-align:center">
+            <div style="
+                background-color:{cor};
+                height:{altura_cartao};
+                display:flex;
+                flex-direction:column;
+                justify-content:center;
+                align-items:center;
+                border-radius:15px;
+                text-align:center;
+                padding:10px;
+            ">
                 <h3>ATRASO</h3>
                 <h1>{texto}</h1>
             </div>
@@ -405,9 +441,14 @@ def painel_dashboard():
         produzido = len(df_filtrado[df_filtrado["data_hora"].dt.hour == h.hour])
         cor_meta = "#4CAF50"  # verde
         cor_prod = "#000000"  # preto
-        col_meta[i].markdown(f"<div style='background-color:{cor_meta};color:white;padding:10px;border-radius:5px;text-align:center'><b>{h.strftime('%H:%M')}<br>{m}</b></div>", unsafe_allow_html=True)
-        col_prod[i].markdown(f"<div style='background-color:{cor_prod};color:white;padding:10px;border-radius:5px;text-align:center'><b>{h.strftime('%H:%M')}<br>{produzido}</b></div>", unsafe_allow_html=True)
-
+        col_meta[i].markdown(
+            f"<div style='background-color:{cor_meta};color:white;padding:10px;border-radius:5px;text-align:center'><b>{h.strftime('%H:%M')}<br>{m}</b></div>", 
+            unsafe_allow_html=True
+        )
+        col_prod[i].markdown(
+            f"<div style='background-color:{cor_prod};color:white;padding:10px;border-radius:5px;text-align:center'><b>{h.strftime('%H:%M')}<br>{produzido}</b></div>", 
+            unsafe_allow_html=True
+        )
 
 
 # =============================

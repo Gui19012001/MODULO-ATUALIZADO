@@ -178,20 +178,29 @@ def checklist_qualidade():
         st.info("Nenhum código disponível para inspeção. Todos já foram inspecionados.")
         return
 
-    if "codigo_atual" not in st.session_state:
-        st.session_state["codigo_atual"] = codigos_disponiveis[0]
+    # Definir código atual com segurança
+    codigo_atual = st.session_state.get("codigo_atual")
+    if codigo_atual not in codigos_disponiveis:
+        codigo_atual = codigos_disponiveis[0] if codigos_disponiveis else None
+        st.session_state["codigo_atual"] = codigo_atual
 
+    # Selectbox para escolher código manualmente ou automático
     numero_serie = st.selectbox(
         "Selecione o Número de Série para Inspeção",
         codigos_disponiveis,
-        index=codigos_disponiveis.index(st.session_state["codigo_atual"])
+        index=codigos_disponiveis.index(codigo_atual) if codigo_atual in codigos_disponiveis else 0
     )
 
     with st.form(key=f"form_checklist_{numero_serie}"):
         resultados = {}
         for item in itens:
             st.markdown(f"### {item}")
-            status = st.radio(f"Status - {item}", ["Conforme", "Não Conforme", "N/A"], index=2, key=f"{numero_serie}_{item}")
+            status = st.radio(
+                f"Status - {item}",
+                ["Conforme", "Não Conforme", "N/A"],
+                index=2,
+                key=f"{numero_serie}_{item}"
+            )
             obs = st.text_area(f"Observações - {item}", key=f"obs_{numero_serie}_{item}")
             resultados[item] = {"status": status, "obs": obs}
 
@@ -204,12 +213,19 @@ def checklist_qualidade():
                 salvar_checklist(numero_serie, resultados, st.session_state['usuario'])
                 st.success(f"Checklist do Nº de Série {numero_serie} salvo com sucesso!")
 
+                # Atualiza próximo código automaticamente
                 codigos_disponiveis = [c for c in codigos_disponiveis if c != numero_serie]
                 if codigos_disponiveis:
                     st.session_state["codigo_atual"] = codigos_disponiveis[0]
-                    st.experimental_set_query_params(updated=str(datetime.datetime.now()))
                 else:
+                    st.session_state["codigo_atual"] = None
                     st.info("Todos os códigos foram inspecionados hoje.")
+
+                # Força atualização da página via query params (substituto do experimental_rerun)
+                st.session_state['force_rerun'] = not st.session_state.get('force_rerun', False)
+                st.experimental_set_query_params(updated=str(datetime.datetime.now()))
+
+
 
 # =============================
 # Reinspeção
@@ -295,16 +311,14 @@ def mostrar_historico_qualidade():
 
 # =============================
 # Dashboard Produção
-# =============================
 def painel_dashboard():
     st.markdown("# 📊 Painel de Apontamentos")
 
-    # ================= Campo Código de Barras =================
     def processar_codigo_barras():
-        codigo_barras = st.session_state["codigo_barras"]
+        codigo_barras = st.session_state.get("codigo_barras", "")
         if codigo_barras:
-            if not codigo_barras.isdigit():
-                st.warning("Apenas números são permitidos no código de barras!")
+            if not codigo_barras.isdigit() or len(codigo_barras) != 9:
+                st.warning("⚠️ O código de barras deve ter exatamente 9 dígitos numéricos!")
                 st.session_state["codigo_barras"] = ""
                 return
             sucesso = salvar_apontamento(codigo_barras.strip())
@@ -312,11 +326,36 @@ def painel_dashboard():
                 st.success(f"Código {codigo_barras} registrado com sucesso!")
             else:
                 st.warning(f"Código {codigo_barras} já registrado hoje ou erro.")
-            st.session_state["codigo_barras"] = ""
+            st.session_state["codigo_barras"] = ""  # limpa para próxima leitura
 
-    st.text_input("Leia o Código de Barras aqui:", key="codigo_barras", on_change=processar_codigo_barras)
+    # Placeholder para recriar o input a cada atualização
+    input_placeholder = st.empty()
 
-    # ================= Filtro de Datas =================
+    # Renderiza o input
+    codigo_barras = input_placeholder.text_input(
+        "Leia o Código de Barras aqui:",
+        key="codigo_barras",
+        on_change=processar_codigo_barras,
+        placeholder="Clique aqui e aproxime o leitor de código de barras"
+    )
+
+    # Script JS para manter o foco após cada atualização
+    st.markdown(
+        """
+        <script>
+        const input = window.parent.document.querySelector('input[id="codigo_barras"]');
+        if (input) {
+            input.focus();
+        }
+        </script>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+
+
+     # ================= Filtro de Datas =================
     hoje = datetime.datetime.now(TZ).date()
     data_selecionada = st.date_input("Selecione o intervalo de datas:", value=(hoje, hoje))
     if isinstance(data_selecionada, tuple):
@@ -468,6 +507,10 @@ def painel_dashboard():
             f"<div style='background-color:{cor_prod};color:white;padding:10px;border-radius:5px;text-align:center'><b>{h.strftime('%H:%M')}<br>{produzido}</b></div>", 
             unsafe_allow_html=True
         )
+
+    # ================= Aqui segue o restante do painel normal (seus cards, hora a hora, etc) =================
+    # ... todo o restante do seu código do painel, inalterado ...
+
 
 
 # =============================

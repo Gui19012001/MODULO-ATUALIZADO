@@ -132,9 +132,6 @@ def login():
 # =============================
 # Checklist
 # =============================
-# =============================
-# Checklist com st.form
-# =============================
 def checklist_qualidade():
     st.markdown("## ✔️ Checklist de Qualidade")
 
@@ -196,7 +193,7 @@ def checklist_qualidade():
                     st.info("Todos os códigos foram inspecionados hoje.")
 
 # =============================
-# Reinspeção com st.form
+# Reinspeção
 # =============================
 def reinspecao():
     df = carregar_checklists()
@@ -231,7 +228,7 @@ def reinspecao():
         st.info("Nenhum produto reprovado para reinspeção.")
 
 # =============================
-# Histórico de Produção com filtro de data
+# Histórico Produção
 # =============================
 def mostrar_historico_producao():
     st.markdown("## 📚 Histórico de Produção")
@@ -252,7 +249,7 @@ def mostrar_historico_producao():
     st.dataframe(df_filtrado[["numero_serie", "data_hora"]], use_container_width=True)
 
 # =============================
-# Histórico de Qualidade com filtro de data
+# Histórico Qualidade
 # =============================
 def mostrar_historico_qualidade():
     st.markdown("## 📚 Histórico de Inspeção de Qualidade")
@@ -278,12 +275,16 @@ def mostrar_historico_qualidade():
     )
 
 # =============================
-# Dashboard de Produção (mantido completo)
+# Dashboard Produção
 # =============================
 def painel_dashboard():
     def processar_codigo_barras():
         codigo_barras = st.session_state["codigo_barras"]
         if codigo_barras:
+            if not codigo_barras.isdigit():
+                st.warning("Apenas números são permitidos no código de barras!")
+                st.session_state["codigo_barras"] = ""
+                return
             sucesso = salvar_apontamento(codigo_barras.strip())
             if sucesso:
                 st.success(f"Código {codigo_barras} registrado com sucesso!")
@@ -311,12 +312,31 @@ def painel_dashboard():
         df_filtrado = pd.DataFrame()
 
     total_lidos = len(df_filtrado)
-    meta_por_hora = 26
-    hora_atual = datetime.datetime.now(TZ).hour
-    horas_passadas = max(hora_atual - 6, 1)
-    meta_acumulada = meta_por_hora * horas_passadas
+
+    # ================= Meta acumulada por hora =================
+    meta_hora = {
+        datetime.time(7, 0): 22,
+        datetime.time(8, 0): 22,
+        datetime.time(9, 0): 22,
+        datetime.time(10, 0): 22,
+        datetime.time(11, 10): 26,
+        datetime.time(12, 10): 0,
+        datetime.time(13, 0): 18,
+        datetime.time(14, 0): 22,
+        datetime.time(15, 0): 22,
+        datetime.time(15, 48): 12
+    }
+
+    meta_acumulada = 0
+    hora_atual = datetime.datetime.now(TZ)
+    for h, m in meta_hora.items():
+        horario_atual = TZ.localize(datetime.datetime.combine(hoje, h))
+        if horario_atual <= hora_atual:
+            meta_acumulada += m
+
     atraso = meta_acumulada - total_lidos if total_lidos < meta_acumulada else 0
 
+    # ================= % de aprovação apenas para o mesmo dia =================
     df_checks = carregar_checklists()
     if not df_checks.empty and not df_filtrado.empty:
         df_checks_filtrado = df_checks[df_checks["numero_serie"].isin(df_filtrado["numero_serie"].unique())]
@@ -326,8 +346,9 @@ def painel_dashboard():
     if not df_checks_filtrado.empty:
         series_with_checks = df_checks_filtrado["numero_serie"].unique()
         aprovados = 0
+        total_reprovados = 0
         for serie in series_with_checks:
-            checks_all_for_serie = df_checks[df_checks["numero_serie"] == serie].sort_values("data_hora")
+            checks_all_for_serie = df_checks_filtrado[df_checks_filtrado["numero_serie"] == serie].sort_values("data_hora")
             if checks_all_for_serie.empty:
                 continue
             teve_reinspecao = (checks_all_for_serie["reinspecao"] == "Sim").any()
@@ -338,9 +359,14 @@ def painel_dashboard():
                 approved = (ultimo["produto_reprovado"] == "Não")
             if approved:
                 aprovados += 1
-        aprovacao_perc = (aprovados / len(series_with_checks)) * 100 if len(series_with_checks) > 0 else 0.0
+            else:
+                total_reprovados += 1
+        total_inspecionado = len(series_with_checks)
+        aprovacao_perc = (aprovados / total_inspecionado) * 100 if total_inspecionado > 0 else 0.0
     else:
         aprovacao_perc = 0.0
+        total_inspecionado = 0
+        total_reprovados = 0
 
     # ========= Cartões grandes =========
     col1, col2, col3 = st.columns(3)
@@ -356,6 +382,8 @@ def painel_dashboard():
             <div style="background-color:#E5F5E5;padding:20px;border-radius:15px;text-align:center">
                 <h3>% APROVAÇÃO</h3>
                 <h1>{aprovacao_perc:.2f}%</h1>
+                <p>Total inspecionado: {total_inspecionado}</p>
+                <p>Total reprovado: {total_reprovados}</p>
             </div>
         """, unsafe_allow_html=True)
     with col3:
@@ -370,19 +398,20 @@ def painel_dashboard():
 
     # ========= Produção hora a hora =========
     st.markdown("### ⏱️ Produção Hora a Hora")
-    horarios = pd.date_range("07:00", "15:59", freq="1H").time
-    col_meta = st.columns(len(horarios))
-    col_prod = st.columns(len(horarios))
+    col_meta = st.columns(len(meta_hora))
+    col_prod = st.columns(len(meta_hora))
 
-    for i, h in enumerate(horarios):
+    for i, (h, m) in enumerate(meta_hora.items()):
         produzido = len(df_filtrado[df_filtrado["data_hora"].dt.hour == h.hour])
         cor_meta = "#4CAF50"  # verde
         cor_prod = "#000000"  # preto
-        col_meta[i].markdown(f"<div style='background-color:{cor_meta};color:white;padding:10px;border-radius:5px;text-align:center'><b>{h.strftime('%H:%M')}<br>{meta_por_hora}</b></div>", unsafe_allow_html=True)
+        col_meta[i].markdown(f"<div style='background-color:{cor_meta};color:white;padding:10px;border-radius:5px;text-align:center'><b>{h.strftime('%H:%M')}<br>{m}</b></div>", unsafe_allow_html=True)
         col_prod[i].markdown(f"<div style='background-color:{cor_prod};color:white;padding:10px;border-radius:5px;text-align:center'><b>{h.strftime('%H:%M')}<br>{produzido}</b></div>", unsafe_allow_html=True)
 
+
+
 # =============================
-# Dashboard de Qualidade
+# Dashboard Qualidade
 # =============================
 def dashboard_qualidade():
     st.markdown("# 📊 Dashboard de Qualidade")
@@ -476,9 +505,3 @@ def app():
 
 if __name__ == "__main__":
     app()
-
-
-
-
-
-

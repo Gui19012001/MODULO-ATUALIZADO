@@ -83,7 +83,7 @@ def carregar_apontamentos():
         df["data_hora"] = pd.to_datetime(df["data_hora"], utc=True).dt.tz_convert(TZ)
     return df
 
-def salvar_apontamento(serie):
+def salvar_apontamento(serie, tipo_producao=None):
     hoje = datetime.datetime.now(TZ).date()
     response = supabase.table("apontamentos")\
         .select("*")\
@@ -96,16 +96,22 @@ def salvar_apontamento(serie):
         return False  # Já registrado hoje
 
     data_hora = datetime.datetime.now(TZ).isoformat()
-    res = supabase.table("apontamentos").insert({
+    dados = {
         "numero_serie": serie,
         "data_hora": data_hora
-    }).execute()
+    }
+    if tipo_producao is not None:
+        dados["tipo_producao"] = tipo_producao
+
+    res = supabase.table("apontamentos").insert(dados).execute()
 
     if res.data and not getattr(res, "error", None):
         return True
     else:
         st.error(f"Erro ao inserir apontamento: {getattr(res, 'error', 'Desconhecido')}")
         return False
+
+
 
 # =============================
 # Funções do App
@@ -433,7 +439,7 @@ def mostrar_historico_producao():
         (df_apont["data_hora"].dt.date <= data_fim)
     ].sort_values("data_hora", ascending=False)
 
-    st.dataframe(df_filtrado[["numero_serie", "data_hora"]], use_container_width=True)
+    st.dataframe(df_filtrado[["numero_serie", "data_hora","tipo_producao"]], use_container_width=True)
 
 # =============================
 # Histórico Qualidade
@@ -461,25 +467,35 @@ def mostrar_historico_qualidade():
         use_container_width=True
     )
 
-# ================== Dashboard de Produção ==================
 def painel_dashboard():
     st.markdown("# 📊 Painel de Apontamentos")
+    
+    # Seleção de tipo de produção
+    if "tipo_producao" not in st.session_state:
+        st.session_state["tipo_producao"] = "Esteira"
 
-    # ======================== Processamento de código ========================
+    tipo_producao = st.radio(
+        "Tipo de produção:",
+        ["Esteira", "Rodagem"],
+        index=0,
+        horizontal=True,
+        key="tipo_producao"
+    )
+
+    # Input de código (sempre ativo)
     if "codigo_barras" not in st.session_state:
         st.session_state["codigo_barras"] = ""
 
     def processar_codigo():
         codigo = st.session_state["codigo_barras"].strip()
         if codigo:
-            sucesso = salvar_apontamento(codigo)
+            sucesso = salvar_apontamento(codigo, st.session_state["tipo_producao"])
             if sucesso:
                 st.success(f"Código {codigo} registrado com sucesso!")
             else:
                 st.warning(f"Código {codigo} já registrado hoje ou erro.")
             st.session_state["codigo_barras"] = ""  # limpa para próxima leitura
 
-    # Input de código (sempre ativo)
     st.text_input(
         "Leia o Código de Barras:",
         key="codigo_barras",
@@ -488,7 +504,6 @@ def painel_dashboard():
     )
 
     # Script JS para focar automaticamente
-    import streamlit.components.v1 as components
     components.html(
         """
         <script>
@@ -499,7 +514,7 @@ def painel_dashboard():
         height=0
     )
 
-    # ======================== Filtro de datas ========================
+    # ======================== filtro de datas ========================
     hoje = datetime.datetime.now(TZ).date()
     data_selecionada = st.date_input("Selecione o intervalo de datas:", value=(hoje, hoje))
     if isinstance(data_selecionada, tuple):
@@ -556,11 +571,7 @@ def painel_dashboard():
             if checks_all_for_serie.empty:
                 continue
             teve_reinspecao = (checks_all_for_serie["reinspecao"] == "Sim").any()
-            if teve_reinspecao:
-                approved = False
-            else:
-                ultimo = checks_all_for_serie.tail(1).iloc[0]
-                approved = (ultimo["produto_reprovado"] == "Não")
+            approved = False if teve_reinspecao else (checks_all_for_serie.tail(1).iloc[0]["produto_reprovado"] == "Não")
             if approved:
                 aprovados += 1
             else:
@@ -572,90 +583,96 @@ def painel_dashboard():
         total_inspecionado = 0
         total_reprovados = 0
 
+    # ======================= Esteira e Rodagem =======================
+    if not df_filtrado.empty:
+        df_esteira = df_filtrado[df_filtrado["tipo_producao"].str.contains("ESTEIRA", case=False, na=False)]
+        df_rodagem = df_filtrado[df_filtrado["tipo_producao"].str.contains("RODAGEM", case=False, na=False)]
+        total_esteira = len(df_esteira)
+        total_rodagem = len(df_rodagem)
+    else:
+        total_esteira = 0
+        total_rodagem = 0
+
     # ========= Cartões grandes =========
     col1, col2, col3 = st.columns(3)
-    altura_cartao = "220px"  # grande e uniforme
+    altura_cartao = "220px"
 
+    # TOTAL PRODUZIDO
     with col1:
         st.markdown(f"""
-            <div style="
-                background-color:#DDE3FF;
-                height:{altura_cartao};
-                display:flex;
-                flex-direction:column;
-                justify-content:center;
-                align-items:center;
-                border-radius:15px;
-                text-align:center;
-                padding:10px;
-            ">
-                <h3>TOTAL PRODUZIDO</h3>
-                <h1>{total_lidos}</h1>
-            </div>
+        <div style="background-color:#DDE3FF;
+                    height:{altura_cartao};
+                    display:flex;
+                    flex-direction:column;
+                    justify-content:center;
+                    align-items:center;
+                    border-radius:15px;
+                    text-align:center;
+                    padding:10px;">
+            <h3>TOTAL PRODUZIDO</h3>
+            <h1>{total_lidos}</h1>
+            <p style='font-size:16px;margin:0;'>Esteira: {total_esteira}</p>
+            <p style='font-size:16px;margin:0;'>Rodagem: {total_rodagem}</p>
+        </div>
         """, unsafe_allow_html=True)
 
+    # % DE APROVAÇÃO
     with col2:
         st.markdown(f"""
-            <div style="
-                background-color:#E5F5E5;
-                height:{altura_cartao};
-                display:flex;
-                flex-direction:column;
-                justify-content:center;
-                align-items:center;
-                border-radius:15px;
-                text-align:center;
-                padding:10px;
-            ">
-                <h3>% APROVAÇÃO</h3>
-                <h1>{aprovacao_perc:.2f}%</h1>
-                <p>Total inspecionado: {total_inspecionado}</p>
-                <p>Total reprovado: {total_reprovados}</p>
-            </div>
+        <div style="background-color:#E5F5E5;
+                    height:{altura_cartao};
+                    display:flex;
+                    flex-direction:column;
+                    justify-content:center;
+                    align-items:center;
+                    border-radius:15px;
+                    text-align:center;
+                    padding:10px;">
+            <h3>% APROVAÇÃO</h3>
+            <h1>{aprovacao_perc:.2f}%</h1>
+            <p>Total inspecionado: {total_inspecionado}</p>
+            <p>Total reprovado: {total_reprovados}</p>
+        </div>
         """, unsafe_allow_html=True)
 
+    # ATRASO
     with col3:
         cor = "#FFCCCC" if atraso > 0 else "#DFF2DD"
         texto = f"Atraso: {atraso}" if atraso > 0 else "Dentro da Meta"
         st.markdown(f"""
-            <div style="
-                background-color:{cor};
-                height:{altura_cartao};
-                display:flex;
-                flex-direction:column;
-                justify-content:center;
-                align-items:center;
-                border-radius:15px;
-                text-align:center;
-                padding:10px;
-            ">
-                <h3>ATRASO</h3>
-                <h1>{texto}</h1>
-            </div>
+        <div style="background-color:{cor};
+                    height:{altura_cartao};
+                    display:flex;
+                    flex-direction:column;
+                    justify-content:center;
+                    align-items:center;
+                    border-radius:15px;
+                    text-align:center;
+                    padding:10px;">
+            <h3>ATRASO</h3>
+            <h1>{texto}</h1>
+        </div>
         """, unsafe_allow_html=True)
 
-    # ========= Produção hora a hora =========
+    # ================== Produção hora a hora ==================
     st.markdown("### ⏱️ Produção Hora a Hora")
     col_meta = st.columns(len(meta_hora))
     col_prod = st.columns(len(meta_hora))
 
     for i, (h, m) in enumerate(meta_hora.items()):
         produzido = len(df_filtrado[df_filtrado["data_hora"].dt.hour == h.hour])
-        cor_meta = "#4CAF50"  # verde
-        cor_prod = "#000000"  # preto
-        col_meta[i].markdown(
-            f"<div style='background-color:{cor_meta};color:white;padding:10px;border-radius:5px;text-align:center'><b>{h.strftime('%H:%M')}<br>{m}</b></div>", 
-            unsafe_allow_html=True
-        )
-        col_prod[i].markdown(
-            f"<div style='background-color:{cor_prod};color:white;padding:10px;border-radius:5px;text-align:center'><b>{h.strftime('%H:%M')}<br>{produzido}</b></div>", 
-            unsafe_allow_html=True
-        )
+        col_meta[i].markdown(f"<div style='background-color:#4CAF50;color:white;padding:10px;border-radius:5px;text-align:center'><b>{h.strftime('%H:%M')}<br>{m}</b></div>", unsafe_allow_html=True)
+        col_prod[i].markdown(f"<div style='background-color:#000000;color:white;padding:10px;border-radius:5px;text-align:center'><b>{h.strftime('%H:%M')}<br>{produzido}</b></div>", unsafe_allow_html=True)
 
-    # ================= Aqui segue o restante do painel normal (seus cards, hora a hora, etc) =================
-    # ... todo o restante do seu código do painel, inalterado ...
+    # ================== Listagem Esteira / Rodagem ==================
+    if not df_filtrado.empty:
+        st.markdown("### Produção Esteira")
+        st.dataframe(df_esteira[["numero_serie", "data_hora"]], use_container_width=True)
 
-
+        st.markdown("### Produção Rodagem")
+        st.dataframe(df_rodagem[["numero_serie", "data_hora"]], use_container_width=True)
+    else:
+        st.info("Nenhum apontamento registrado no período selecionado.")
 
 def dashboard_qualidade():
     st.markdown("# 📊 Dashboard de Qualidade")
@@ -846,4 +863,3 @@ def app():
 
 if __name__ == "__main__":
     app()
-

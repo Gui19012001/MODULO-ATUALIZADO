@@ -310,7 +310,7 @@ def checklist_qualidade(numero_serie, usuario):
                 salvar_checklist(numero_serie, dados_para_salvar, usuario)
                 st.success(f"Checklist do Nº de Série {numero_serie} salvo com sucesso!")
                 
-def checklist_reinspecao(numero_serie, usuario):
+def checklist_reinspecao(numero_serie, usuario, auto_avancar=False):
     st.markdown(f"## 🔄 Reinspeção – Nº de Série: {numero_serie}")
 
     perguntas = [
@@ -345,7 +345,7 @@ def checklist_reinspecao(numero_serie, usuario):
         8: ["Spring", "Cuíca", "N/A"],
         10: ["ABS", "Convencional"],
         12: ["Automático", "Manual", "N/A"],
-        14: ["Direito", "Esquerdo"],  # multiselect
+        14: ["Direito", "Esquerdo"],
         17: ["Conforme", "Falta de cordão", "Porosidade", "Falta de Fusão"]
     }
 
@@ -421,6 +421,9 @@ def checklist_reinspecao(numero_serie, usuario):
                 salvar_checklist(numero_serie, dados_para_salvar, usuario, reinspecao=True)
                 st.success(f"Reinspeção do Nº de Série {numero_serie} salva com sucesso!")
 
+                # retorna True para indicar conclusão (avança para o próximo)
+                if auto_avancar:
+                    return True
 
 
 # =============================
@@ -792,7 +795,6 @@ def dashboard_qualidade():
 
 
 
-
 # =============================
 # App principal
 # =============================
@@ -859,16 +861,31 @@ def app():
                 (df_checks["reinspecao"] != "Sim")
             ]
 
-            # Pegar números de série únicos
             numeros_serie_reinspecao = df_reprovados["numero_serie"].unique() if not df_reprovados.empty else []
 
             if numeros_serie_reinspecao.size == 0:
                 st.info("Nenhum checklist reprovado pendente para reinspeção.")
             else:
-                # Executa a reinspeção para cada número de série automaticamente
-                for numero_serie in numeros_serie_reinspecao:
+                # Inicializa índice da reinspeção no session_state
+                if "reinspecao_index" not in st.session_state:
+                    st.session_state.reinspecao_index = 0
+
+                idx = st.session_state.reinspecao_index
+
+                if idx < len(numeros_serie_reinspecao):
+                    numero_serie = numeros_serie_reinspecao[idx]
                     st.markdown(f"### Reinspeção automática – Nº de Série: {numero_serie}")
-                    checklist_reinspecao(numero_serie, usuario)
+
+                    # Chama a função de reinspeção e recebe True se concluído
+                    concluido = checklist_reinspecao(numero_serie, usuario, auto_avancar=True)
+
+                    if concluido:
+                        # Avança para o próximo checklist
+                        st.session_state.reinspecao_index += 1
+                        st.stop()  # Força a atualização da página e exibe o próximo checklist
+                else:
+                    st.success("Todos os checklists reprovados foram reinspecionados!")
+                    st.session_state.reinspecao_index = 0  # Reseta para reinício futuro
 
     elif menu == "Histórico de Produção":
         mostrar_historico_producao()
@@ -888,4 +905,5 @@ def app():
 
 if __name__ == "__main__":
     app()
+
 

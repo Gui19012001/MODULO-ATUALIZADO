@@ -192,6 +192,8 @@ def checklist_qualidade(numero_serie, usuario):
         "Etiqueta do produto – As informações estão corretas / legíveis conforme modelo e gravação do eixo?",
         "Placa do Inmetro está correta / fixada e legível? Número corresponde à viga?",
         "Gravação do número de série da viga está legível e pintada?",
+        "Etiqueta do ABS está conforme? Com número de série compátivel ao da viga?",
+        "Teste do ABS está aprovado?",
         "Rodagem – tipo correto? Especifique o modelo",
         "Graxeiras estão em perfeito estado?",
         "Sistema de atuação correto? Especifique modelo",
@@ -202,33 +204,37 @@ def checklist_qualidade(numero_serie, usuario):
         "Tampa do cubo correta, livre de avarias e pintura nos critérios?",
         "As tampas dos cubos dos ambos os lados são iguais? (Direito / Esquerdo)",
         "Pintura do eixo livre de oxidação, camada conforme padrão?",
-        "Eixo isento de escorrimento na pintura e pontos sem tinta?"
+        "Eixo isento de escorrimento na pintura e pontos sem tinta?",
+        "Os cordões de solda do eixo estão conformes?"
     ]
 
-    # mapeamento para salvar com chave textual
     item_keys = {
         1: "ETIQUETA",
         2: "PLACA_IMETRO",
         3: "NUMERO_SERIE_VIGA",
-        4: "RODAGEM_MODELO",
-        5: "GRAXEIRAS",
-        6: "SISTEMA_ATUACAO",
-        7: "SPRINGS_CUICAS",
-        8: "MODELO_FREIO",
-        9: "ANEIS_ELASTICOS",
-        10: "CATRACA_FREIO",
-        11: "TAMPA_CUBO",
-        12: "TAMPAS_LADOS",
-        13: "PINTURA_EIXO",
-        14: "ESCORRIMENTO_PINTURA"
+        4: "ETIQUETA ABS",
+        5: "TESTE ABS",
+        6: "RODAGEM_MODELO",
+        7: "GRAXEIRAS",
+        8: "SISTEMA_ATUACAO",
+        9: "SPRINGS_CUICAS",
+        10: "MODELO_FREIO",
+        11: "ANEIS_ELASTICOS",
+        12: "CATRACA_FREIO",
+        13: "TAMPA_CUBO",
+        14: "TAMPAS_LADOS",
+        15: "PINTURA_EIXO",
+        16: "ESCORRIMENTO_PINTURA",
+        17: "SOLDA"
     }
 
     opcoes_modelos = {
-        4: ["Single", "Aço", "Alumínio"],
-        6: ["Spring", "Cuíca"],
-        8: ["ABS", "Convencional"],
-        10: ["Automático", "Manual"],
-        12: ["Direito", "Esquerdo"]  # multiselect
+        6: ["Single", "Aço", "Alumínio", "N/A"],
+        8: ["Spring", "Cuíca", "N/A"],
+        10: ["ABS", "Convencional"],
+        12: ["Automático", "Manual", "N/A"],
+        14: ["Direito", "Esquerdo"],  # multiselect
+        17: ["Conforme", "Falta de cordão", "Porosidade", "Falta de Fusão"]
     }
 
     resultados = {}
@@ -257,7 +263,7 @@ def checklist_qualidade(numero_serie, usuario):
 
             # Seleção de modelos
             if i in opcoes_modelos:
-                if i == 12:  # multiselect para Direito/Esquerdo
+                if i == 14:  # multiselect para Direito/Esquerdo
                     modelo = cols[2].multiselect(
                         "Lados",
                         opcoes_modelos[i],
@@ -303,9 +309,7 @@ def checklist_qualidade(numero_serie, usuario):
 
                 salvar_checklist(numero_serie, dados_para_salvar, usuario)
                 st.success(f"Checklist do Nº de Série {numero_serie} salvo com sucesso!")
-# ==============================
-# Checklist de Reinspeção (ajustado com palavra-chave)
-# ==============================
+                
 def checklist_reinspecao(numero_serie, usuario):
     st.markdown(f"## 🔄 Reinspeção – Nº de Série: {numero_serie}")
 
@@ -313,6 +317,8 @@ def checklist_reinspecao(numero_serie, usuario):
         "Etiqueta do produto – As informações estão corretas / legíveis conforme modelo e gravação do eixo?",
         "Placa do Inmetro está correta / fixada e legível? Número corresponde à viga?",
         "Gravação do número de série da viga está legível e pintada?",
+        "Etiqueta do ABS está conforme? Com número de série compátivel ao da viga?",
+        "Teste do ABS está aprovado?",
         "Rodagem – tipo correto? Especifique o modelo",
         "Graxeiras estão em perfeito estado?",
         "Sistema de atuação correto? Especifique modelo",
@@ -323,32 +329,24 @@ def checklist_reinspecao(numero_serie, usuario):
         "Tampa do cubo correta, livre de avarias e pintura nos critérios?",
         "As tampas dos cubos dos ambos os lados são iguais? (Direito / Esquerdo)",
         "Pintura do eixo livre de oxidação, camada conforme padrão?",
-        "Eixo isento de escorrimento na pintura e pontos sem tinta?"
+        "Eixo isento de escorrimento na pintura e pontos sem tinta?",
+        "Os cordões de solda do eixo estão conformes?"
     ]
 
     item_keys = {
-        1: "ETIQUETA",
-        2: "PLACA_IMETRO",
-        3: "NUMERO_SERIE_VIGA",
-        4: "RODAGEM_MODELO",
-        5: "GRAXEIRAS",
-        6: "SISTEMA_ATUACAO",
-        7: "SPRINGS_CUICAS",
-        8: "MODELO_FREIO",
-        9: "ANEIS_ELASTICOS",
-        10: "CATRACA_FREIO",
-        11: "TAMPA_CUBO",
-        12: "TAMPAS_LADOS",
-        13: "PINTURA_EIXO",
-        14: "ESCORRIMENTO_PINTURA"
+        1: "ETIQUETA", 2: "PLACA_IMETRO", 3: "NUMERO_SERIE_VIGA", 4: "ETIQUETA ABS", 5: "TESTE ABS",
+        6: "RODAGEM_MODELO", 7: "GRAXEIRAS", 8: "SISTEMA_ATUACAO", 9: "SPRINGS_CUICAS", 10: "MODELO_FREIO",
+        11: "ANEIS_ELASTICOS", 12: "CATRACA_FREIO", 13: "TAMPA_CUBO", 14: "TAMPAS_LADOS",
+        15: "PINTURA_EIXO", 16: "ESCORRIMENTO_PINTURA", 17: "SOLDA"
     }
 
     opcoes_modelos = {
-        4: ["Single", "Aço", "Alumínio"],
-        6: ["Spring", "Cuíca"],
-        8: ["ABS", "Convencional"],
-        10: ["Automático", "Manual"],
-        12: ["Direito", "Esquerdo"]
+        6: ["Single", "Aço", "Alumínio", "N/A"],
+        8: ["Spring", "Cuíca", "N/A"],
+        10: ["ABS", "Convencional"],
+        12: ["Automático", "Manual", "N/A"],
+        14: ["Direito", "Esquerdo"],  # multiselect
+        17: ["Conforme", "Falta de cordão", "Porosidade", "Falta de Fusão"]
     }
 
     resultados = {}
@@ -360,21 +358,20 @@ def checklist_reinspecao(numero_serie, usuario):
     with st.form(key=f"form_reinspecao_{numero_serie}"):
         for i, pergunta in enumerate(perguntas, start=1):
             cols = st.columns([7, 2, 2])
-
             cols[0].markdown(f"**{i}. {pergunta}**")
 
             escolha = cols[1].radio(
                 "",
-                ["✅", "❌", "🟡"],
+                ["", "✅", "❌", "🟡"],
                 key=f"resp_reinspecao_{numero_serie}_{i}",
                 horizontal=True,
-                index=None,
+                index=0,
                 label_visibility="collapsed"
             )
-            resultados[i] = escolha
+            resultados[i] = None if escolha == "" else escolha
 
             if i in opcoes_modelos:
-                if i == 12:
+                if i == 14:
                     modelo = cols[2].multiselect(
                         "Lados",
                         opcoes_modelos[i],
@@ -398,7 +395,7 @@ def checklist_reinspecao(numero_serie, usuario):
             faltando = [i for i, resp in resultados.items() if resp is None]
             modelos_faltando = [
                 i for i in opcoes_modelos
-                if modelos.get(i) is None or modelos[i] == [] or modelos[i] == ""
+                if (modelos.get(i) is None or modelos[i] == [] or modelos[i] == "")
             ]
 
             if faltando or modelos_faltando:
@@ -412,13 +409,19 @@ def checklist_reinspecao(numero_serie, usuario):
                 dados_para_salvar = {}
                 for i, resp in resultados.items():
                     chave_item = item_keys.get(i, f"Item_{i}")
+                    obs = modelos.get(i)
+                    if isinstance(obs, list):
+                        obs = ", ".join(obs)
                     dados_para_salvar[chave_item] = {
                         "status": "Conforme" if resp == "✅" else "Não Conforme" if resp == "❌" else "N/A",
-                        "obs": modelos.get(i)
+                        "obs": obs
                     }
 
+                # grava como reinspeção
                 salvar_checklist(numero_serie, dados_para_salvar, usuario, reinspecao=True)
                 st.success(f"Reinspeção do Nº de Série {numero_serie} salva com sucesso!")
+
+
 
 # =============================
 # Histórico Produção
@@ -843,7 +846,29 @@ def app():
 
     elif menu == "Reinspeção":
         usuario = st.session_state['usuario']
-        reinspecao(usuario)
+
+        # ======================== REINSPEÇÃO AUTOMÁTICA ========================
+        df_checks = carregar_checklists()
+
+        if df_checks.empty:
+            st.info("Nenhum checklist registrado ainda.")
+        else:
+            # Filtrar produtos reprovados e que ainda não passaram por reinspeção
+            df_reprovados = df_checks[
+                (df_checks["produto_reprovado"] == "Sim") &
+                (df_checks["reinspecao"] != "Sim")
+            ]
+
+            # Pegar números de série únicos
+            numeros_serie_reinspecao = df_reprovados["numero_serie"].unique() if not df_reprovados.empty else []
+
+            if numeros_serie_reinspecao.size == 0:
+                st.info("Nenhum checklist reprovado pendente para reinspeção.")
+            else:
+                # Executa a reinspeção para cada número de série automaticamente
+                for numero_serie in numeros_serie_reinspecao:
+                    st.markdown(f"### Reinspeção automática – Nº de Série: {numero_serie}")
+                    checklist_reinspecao(numero_serie, usuario)
 
     elif menu == "Histórico de Produção":
         mostrar_historico_producao()
@@ -863,3 +888,4 @@ def app():
 
 if __name__ == "__main__":
     app()
+

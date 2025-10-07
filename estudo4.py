@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 import plotly.express as px
 import plotly.graph_objects as go
+import cv2
 
 # =============================
 # Carregar variáveis de ambiente
@@ -112,10 +113,155 @@ def salvar_apontamento(serie, tipo_producao=None):
         return False
 
 
+import streamlit as st
+import cv2
+from pyzbar.pyzbar import decode
+import numpy as np
+import datetime
+import pytz
+from supabase import create_client
+import os
+from dotenv import load_dotenv
+from pathlib import Path
+import pandas as pd
+import time
 
-# =============================
-# Funções do App
-# =============================
+# ================================
+# CONFIGURAÇÃO DO SUPABASE
+# ================================
+env_path = Path(__file__).parent / "teste.env"
+load_dotenv(dotenv_path=env_path)
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+TZ = pytz.timezone("America/Sao_Paulo")
+
+# ================================
+# FUNÇÕES AUXILIARES
+# ================================
+def salvar_apontamento(serie, tipo_producao):
+    hoje = datetime.datetime.now(TZ).date()
+    response = supabase.table("apontamentos")\
+        .select("*")\
+        .eq("numero_serie", serie)\
+        .gte("data_hora", datetime.datetime.combine(hoje, datetime.time.min).isoformat())\
+        .lte("data_hora", datetime.datetime.combine(hoje, datetime.time.max).isoformat())\
+        .execute()
+
+    if response.data:
+        return False
+
+    dados = {
+        "numero_serie": serie,
+        "data_hora": datetime.datetime.now(TZ).isoformat(),
+        "tipo_producao": tipo_producao
+    }
+    supabase.table("apontamentos").insert(dados).execute()
+    return True
+
+def carregar_apontamentos():
+    response = supabase.table("apontamentos").select("*").execute()
+    if not response.data:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(response.data)
+    df["data_hora"] = pd.to_datetime(df["data_hora"])
+    return df
+
+def mostrar_ultimos_apontamentos():
+    df = carregar_apontamentos()
+    if df.empty:
+        historico_box.markdown("<h4>📋 Últimos 5 Registros</h4><p>Nenhum registro ainda.</p>", unsafe_allow_html=True)
+        return
+
+    df = df.sort_values("data_hora", ascending=False).head(5)
+    hist_html = "<h4 style='margin-top:0;'>📋 Últimos 5 Registros</h4>"
+    for _, row in df.iterrows():
+        cor = "#4cd137"
+        hora = row["data_hora"].strftime("%H:%M:%S")
+        tipo = row["tipo_producao"]
+        serie = row["numero_serie"]
+        hist_html += (
+            f"<div style='background-color:#ffffff;padding:10px;border-radius:8px;margin-bottom:10px;"
+            f"box-shadow:0 2px 4px rgba(0,0,0,0.05);'>"
+            f"<div style='font-weight:bold;font-size:16px;color:{cor};'>{serie}</div>"
+            f"<div style='font-size:13px;color:#636e72;'>🕒 {hora} • {tipo}</div>"
+            f"</div>"
+        )
+    historico_box.markdown(hist_html, unsafe_allow_html=True)
+
+# ================================
+# MÓDULO DE APONTAMENTO
+# ================================
+def modulo_apontamento():
+    st.markdown("## 📸 Leitura de Códigos – Apontamento Automático")
+    st.caption("Clique no botão para iniciar a câmera e ler códigos de barras (9 dígitos).")
+
+    tipo_producao = st.radio(
+        "Selecione o tipo de produção:",
+        ["Esteira", "Rodagem"],
+        horizontal=True
+    )
+
+    col1, col2 = st.columns([3, 1.2])
+    stframe = col1.empty()
+    status_box = col2.empty()
+    global historico_box
+    historico_box = col2.empty()
+
+    if "ultimo_codigo" not in st.session_state:
+        st.session_state.ultimo_codigo = None
+        st.session_state.ultima_leitura = datetime.datetime.now(TZ) - datetime.timedelta(seconds=10)
+
+    start = st.button("📷 Iniciar Leitura", key="start_leitura")
+
+    if start:
+        camera = cv2.VideoCapture(0)
+        if not camera.isOpened():
+            st.error("❌ Não foi possível acessar a câmera.")
+            return
+
+        status_box.success("✅ Câmera inicializada! Aponte o código de barras.")
+        stop = False
+
+        while not stop:
+            ret, frame = camera.read()
+            if not ret:
+                status_box.error("❌ Falha ao capturar frame.")
+                break
+
+            codes = decode(frame)
+            for code in codes:
+                codigo = code.data.decode("utf-8").strip()
+                if not (codigo.isdigit() and len(codigo) == 9):
+                    pts = np.array([code.polygon], np.int32).reshape((-1,1,2))
+                    cv2.polylines(frame, [pts], True, (0,0,255), 2)
+                    cv2.putText(frame, codigo, (code.rect.left, code.rect.top - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,0,255), 2)
+                    continue
+
+                pts = np.array([code.polygon], np.int32).reshape((-1,1,2))
+                cv2.polylines(frame, [pts], True, (76,209,55), 3)
+                cv2.putText(frame, codigo, (code.rect.left, code.rect.top - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (76,209,55), 2)
+
+                tempo_passado = (datetime.datetime.now(TZ) - st.session_state.ultima_leitura).total_seconds()
+                if codigo != st.session_state.ultimo_codigo or tempo_passado > 5:
+                    sucesso = salvar_apontamento(codigo, tipo_producao)
+                    if sucesso:
+                        status_box.markdown(f"<div class='success'>✅ Código {codigo} registrado!</div>", unsafe_allow_html=True)
+                    else:
+                        status_box.markdown(f"<div class='warning'>⚠️ Código {codigo} já registrado hoje.</div>", unsafe_allow_html=True)
+
+                    st.session_state.ultimo_codigo = codigo
+                    st.session_state.ultima_leitura = datetime.datetime.now(TZ)
+
+            mostrar_ultimos_apontamentos()
+            stframe.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), use_container_width=True)
+
+        camera.release()
 # =============================
 # Login centralizado e estilizado
 # =============================
@@ -475,49 +621,20 @@ def mostrar_historico_qualidade():
 
 def painel_dashboard():
     st.markdown("# 📊 Painel de Apontamentos")
-    
-    # Seleção de tipo de produção
-    if "tipo_producao" not in st.session_state:
-        st.session_state["tipo_producao"] = "Esteira"
+    st.caption("Atualização automática a cada 2 minutos ⏱️")
 
-    tipo_producao = st.radio(
-        "Tipo de produção:",
-        ["Esteira", "Rodagem"],
-        index=0,
-        horizontal=True,
-        key="tipo_producao"
-    )
-
-    # Input de código (sempre ativo)
-    if "codigo_barras" not in st.session_state:
-        st.session_state["codigo_barras"] = ""
-
-    def processar_codigo():
-        codigo = st.session_state["codigo_barras"].strip()
-        if codigo:
-            sucesso = salvar_apontamento(codigo, st.session_state["tipo_producao"])
-            if sucesso:
-                st.success(f"Código {codigo} registrado com sucesso!")
-            else:
-                st.warning(f"Código {codigo} já registrado hoje ou erro.")
-            st.session_state["codigo_barras"] = ""  # limpa para próxima leitura
-
-    st.text_input(
-        "Leia o Código de Barras:",
-        key="codigo_barras",
-        on_change=processar_codigo,
-        placeholder="Aproxime o leitor"
-    )
-
-    # Script JS para focar automaticamente
-    components.html(
+    # ========================
+    # Atualização automática (120 segundos)
+    # ========================
+    st.markdown(
         """
         <script>
-        const input = window.parent.document.querySelector('input[id^="codigo_barras"]');
-        if(input){ input.focus(); }
+        setTimeout(function() {
+            window.location.reload();
+        }, 120000); // 120000 ms = 2 minutos
         </script>
         """,
-        height=0
+        unsafe_allow_html=True
     )
 
     # ======================== filtro de datas ========================
@@ -529,6 +646,7 @@ def painel_dashboard():
         data_inicio = data_fim = data_selecionada
 
     df_apont = carregar_apontamentos()
+
     if not df_apont.empty:
         start_date = TZ.localize(datetime.datetime.combine(data_inicio, datetime.time.min))
         end_date = TZ.localize(datetime.datetime.combine(data_fim, datetime.time.max))
@@ -536,7 +654,11 @@ def painel_dashboard():
     else:
         df_filtrado = pd.DataFrame()
 
-    total_lidos = len(df_filtrado)
+    # ======================== Contagem total ========================
+    if not df_filtrado.empty:
+        total_lidos = len(df_filtrado)
+    else:
+        total_lidos = 0
 
     # ======================== Meta acumulada por hora ========================
     meta_hora = {
@@ -603,18 +725,9 @@ def painel_dashboard():
     col1, col2, col3 = st.columns(3)
     altura_cartao = "220px"
 
-    # TOTAL PRODUZIDO
     with col1:
         st.markdown(f"""
-        <div style="background-color:#DDE3FF;
-                    height:{altura_cartao};
-                    display:flex;
-                    flex-direction:column;
-                    justify-content:center;
-                    align-items:center;
-                    border-radius:15px;
-                    text-align:center;
-                    padding:10px;">
+        <div style="background-color:#DDE3FF;height:{altura_cartao};display:flex;flex-direction:column;justify-content:center;align-items:center;border-radius:15px;text-align:center;padding:10px;">
             <h3>TOTAL PRODUZIDO</h3>
             <h1>{total_lidos}</h1>
             <p style='font-size:16px;margin:0;'>Esteira: {total_esteira}</p>
@@ -622,18 +735,9 @@ def painel_dashboard():
         </div>
         """, unsafe_allow_html=True)
 
-    # % DE APROVAÇÃO
     with col2:
         st.markdown(f"""
-        <div style="background-color:#E5F5E5;
-                    height:{altura_cartao};
-                    display:flex;
-                    flex-direction:column;
-                    justify-content:center;
-                    align-items:center;
-                    border-radius:15px;
-                    text-align:center;
-                    padding:10px;">
+        <div style="background-color:#E5F5E5;height:{altura_cartao};display:flex;flex-direction:column;justify-content:center;align-items:center;border-radius:15px;text-align:center;padding:10px;">
             <h3>% APROVAÇÃO</h3>
             <h1>{aprovacao_perc:.2f}%</h1>
             <p>Total inspecionado: {total_inspecionado}</p>
@@ -641,20 +745,11 @@ def painel_dashboard():
         </div>
         """, unsafe_allow_html=True)
 
-    # ATRASO
     with col3:
         cor = "#FFCCCC" if atraso > 0 else "#DFF2DD"
         texto = f"Atraso: {atraso}" if atraso > 0 else "Dentro da Meta"
         st.markdown(f"""
-        <div style="background-color:{cor};
-                    height:{altura_cartao};
-                    display:flex;
-                    flex-direction:column;
-                    justify-content:center;
-                    align-items:center;
-                    border-radius:15px;
-                    text-align:center;
-                    padding:10px;">
+        <div style="background-color:{cor};height:{altura_cartao};display:flex;flex-direction:column;justify-content:center;align-items:center;border-radius:15px;text-align:center;padding:10px;">
             <h3>ATRASO</h3>
             <h1>{texto}</h1>
         </div>
@@ -679,6 +774,8 @@ def painel_dashboard():
         st.dataframe(df_rodagem[["numero_serie", "data_hora"]], use_container_width=True)
     else:
         st.info("Nenhum apontamento registrado no período selecionado.")
+
+
 
 def dashboard_qualidade():
     st.markdown("# 📊 Dashboard de Qualidade")
@@ -804,6 +901,7 @@ def app():
 
     menu = st.sidebar.selectbox("Menu", [
         "Dashboard Produção",
+	"Apontamento",
         "Inspeção de Qualidade",
         "Reinspeção",
         "Histórico de Produção",
@@ -887,6 +985,9 @@ def app():
                     st.success("Todos os checklists reprovados foram reinspecionados!")
                     st.session_state.reinspecao_index = 0  # Reseta para reinício futuro
 
+    elif menu == "Apontamento":
+        modulo_apontamento()
+
     elif menu == "Histórico de Produção":
         mostrar_historico_producao()
 
@@ -905,5 +1006,7 @@ def app():
 
 if __name__ == "__main__":
     app()
+
+
 
 

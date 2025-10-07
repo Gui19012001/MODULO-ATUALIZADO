@@ -111,88 +111,8 @@ def salvar_apontamento(serie, tipo_producao=None):
         st.error(f"Erro ao inserir apontamento: {getattr(res, 'error', 'Desconhecido')}")
         return False
 
-
-import streamlit as st
-import cv2
-from pyzbar.pyzbar import decode
-import numpy as np
-import datetime
-import pytz
-from supabase import create_client
-import os
-from dotenv import load_dotenv
-from pathlib import Path
-import pandas as pd
-import time
-
 # ================================
-# CONFIGURAÇÃO DO SUPABASE
-# ================================
-env_path = Path(__file__).parent / "teste.env"
-load_dotenv(dotenv_path=env_path)
-
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-TZ = pytz.timezone("America/Sao_Paulo")
-
-# ================================
-# FUNÇÕES AUXILIARES
-# ================================
-def salvar_apontamento(serie, tipo_producao):
-    hoje = datetime.datetime.now(TZ).date()
-    response = supabase.table("apontamentos")\
-        .select("*")\
-        .eq("numero_serie", serie)\
-        .gte("data_hora", datetime.datetime.combine(hoje, datetime.time.min).isoformat())\
-        .lte("data_hora", datetime.datetime.combine(hoje, datetime.time.max).isoformat())\
-        .execute()
-
-    if response.data:
-        return False
-
-    dados = {
-        "numero_serie": serie,
-        "data_hora": datetime.datetime.now(TZ).isoformat(),
-        "tipo_producao": tipo_producao
-    }
-    supabase.table("apontamentos").insert(dados).execute()
-    return True
-
-def carregar_apontamentos():
-    response = supabase.table("apontamentos").select("*").execute()
-    if not response.data:
-        return pd.DataFrame()
-
-    df = pd.DataFrame(response.data)
-    df["data_hora"] = pd.to_datetime(df["data_hora"])
-    return df
-
-def mostrar_ultimos_apontamentos():
-    df = carregar_apontamentos()
-    if df.empty:
-        historico_box.markdown("<h4>📋 Últimos 5 Registros</h4><p>Nenhum registro ainda.</p>", unsafe_allow_html=True)
-        return
-
-    df = df.sort_values("data_hora", ascending=False).head(5)
-    hist_html = "<h4 style='margin-top:0;'>📋 Últimos 5 Registros</h4>"
-    for _, row in df.iterrows():
-        cor = "#4cd137"
-        hora = row["data_hora"].strftime("%H:%M:%S")
-        tipo = row["tipo_producao"]
-        serie = row["numero_serie"]
-        hist_html += (
-            f"<div style='background-color:#ffffff;padding:10px;border-radius:8px;margin-bottom:10px;"
-            f"box-shadow:0 2px 4px rgba(0,0,0,0.05);'>"
-            f"<div style='font-weight:bold;font-size:16px;color:{cor};'>{serie}</div>"
-            f"<div style='font-size:13px;color:#636e72;'>🕒 {hora} • {tipo}</div>"
-            f"</div>"
-        )
-    historico_box.markdown(hist_html, unsafe_allow_html=True)
-
-# ================================
-# MÓDULO DE APONTAMENTO
+# MÓDULO DE APONTAMENTO (Atualizado para OpenCV)
 # ================================
 def modulo_apontamento():
     st.markdown("## 📸 Leitura de Códigos – Apontamento Automático")
@@ -231,7 +151,37 @@ def modulo_apontamento():
                 status_box.error("❌ Falha ao capturar frame.")
                 break
 
-            codes = decode(frame)
+            # -------------------------------
+            # Leitura de QR code / código de barras usando OpenCV
+            # -------------------------------
+            detector = cv2.QRCodeDetector()
+            data, points, _ = detector.detectAndDecode(frame)
+
+            codes = []
+            if data:
+                # Simular o objeto 'code' usado no seu fluxo
+                class Code:
+                    def __init__(self, data, points):
+                        self.data = data.encode("utf-8")
+                        self.polygon = points.astype(int) if points is not None else np.array([[0,0]])
+                        self.rect = type('rect', (), {})()
+                        if points is not None:
+                            x, y, w, h = cv2.boundingRect(points.astype(int))
+                            self.rect.left = x
+                            self.rect.top = y
+                            self.rect.width = w
+                            self.rect.height = h
+                        else:
+                            self.rect.left = 0
+                            self.rect.top = 0
+                            self.rect.width = 0
+                            self.rect.height = 0
+
+                codes.append(Code(data, points))
+
+            # -------------------------------
+            # Processamento dos códigos lidos
+            # -------------------------------
             for code in codes:
                 codigo = code.data.decode("utf-8").strip()
                 if not (codigo.isdigit() and len(codigo) == 9):
@@ -261,6 +211,7 @@ def modulo_apontamento():
             stframe.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), use_container_width=True)
 
         camera.release()
+
 # =============================
 # Login centralizado e estilizado
 # =============================

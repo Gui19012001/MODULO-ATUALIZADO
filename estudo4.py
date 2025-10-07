@@ -115,7 +115,23 @@ def salvar_apontamento(serie, tipo_producao=None):
         return False
 
 # ================================
-# MÓDULO DE APONTAMENTO (Tablet / Navegador) - Indentação Corrigida
+# Mostrar últimos apontamentos
+# ================================
+def mostrar_ultimos_apontamentos():
+    st.markdown("### 🕒 Últimos Apontamentos")
+    
+    if "historico" not in st.session_state:
+        st.session_state["historico"] = []
+
+    ultimos = st.session_state["historico"][-5:]
+    if not ultimos:
+        st.info("Nenhum apontamento registrado ainda.")
+    else:
+        for item in reversed(ultimos):
+            st.write(f"- Código: {item['codigo']}, Tipo: {item['tipo']}, Hora: {item['hora']}")
+
+# ================================
+# Módulo de Apontamento
 # ================================
 def modulo_apontamento():
     st.markdown("## 📸 Leitura de Códigos – Apontamento Automático")
@@ -137,25 +153,20 @@ def modulo_apontamento():
         st.session_state.ultimo_codigo = None
         st.session_state.ultima_leitura = datetime.datetime.now(TZ) - datetime.timedelta(seconds=10)
 
-    # -------------------------------
     # Captura da câmera via navegador
-    # -------------------------------
     uploaded_file = st.camera_input("📷 Clique para capturar o código")
 
     if uploaded_file:
-        # Converte a imagem enviada em frame OpenCV
+        # Converte imagem em frame OpenCV
         file_bytes = np.frombuffer(uploaded_file.read(), np.uint8)
         frame = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
 
-        # -------------------------------
-        # Detectar QR code
-        # -------------------------------
+        # Detecta QR code
         detector = cv2.QRCodeDetector()
         data, points, _ = detector.detectAndDecode(frame)
 
         codes = []
         if data:
-            # Criar objeto compatível com 'code' do fluxo original
             class Code:
                 def __init__(self, data, points):
                     self.data = data.encode("utf-8")
@@ -175,13 +186,11 @@ def modulo_apontamento():
 
             codes.append(Code(data, points))
 
-        # -------------------------------
-        # Processamento dos códigos
-        # -------------------------------
+        # Processa códigos detectados
         for code in codes:
             codigo = code.data.decode("utf-8").strip()
 
-            # Verifica se é um código de 9 dígitos
+            # Valida código de 9 dígitos
             if not (codigo.isdigit() and len(codigo) == 9):
                 pts = np.array([code.polygon], np.int32).reshape((-1,1,2))
                 cv2.polylines(frame, [pts], True, (0,0,255), 2)
@@ -189,13 +198,13 @@ def modulo_apontamento():
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,0,255), 2)
                 continue
 
-            # Destaca o código válido
+            # Destaca código válido
             pts = np.array([code.polygon], np.int32).reshape((-1,1,2))
             cv2.polylines(frame, [pts], True, (76,209,55), 3)
             cv2.putText(frame, codigo, (code.rect.left, code.rect.top - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.9, (76,209,55), 2)
 
-            # Verifica histórico para evitar duplicidade
+            # Evita duplicidade em curto tempo
             tempo_passado = (datetime.datetime.now(TZ) - st.session_state.ultima_leitura).total_seconds()
             if codigo != st.session_state.ultimo_codigo or tempo_passado > 5:
                 sucesso = salvar_apontamento(codigo, tipo_producao)
@@ -204,14 +213,21 @@ def modulo_apontamento():
                 else:
                     status_box.markdown(f"<div class='warning'>⚠️ Código {codigo} já registrado hoje.</div>", unsafe_allow_html=True)
 
+                # Atualiza histórico em tempo real
+                if "historico" not in st.session_state:
+                    st.session_state["historico"] = []
+                st.session_state["historico"].append({
+                    "codigo": codigo,
+                    "tipo": tipo_producao,
+                    "hora": datetime.datetime.now(TZ).strftime("%H:%M:%S")
+                })
+
                 st.session_state.ultimo_codigo = codigo
                 st.session_state.ultima_leitura = datetime.datetime.now(TZ)
 
-        # Mostra histórico e frame processado
+        # Exibe frame processado e histórico
         mostrar_ultimos_apontamentos()
         stframe.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), use_container_width=True)
-
-
 # =============================
 # Login centralizado e estilizado
 # =============================

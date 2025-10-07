@@ -4,4 +4,3 @@ plotly
 pytz
 supabase
 python-dotenv
-cv2

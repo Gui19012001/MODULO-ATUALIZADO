@@ -113,11 +113,11 @@ def salvar_apontamento(serie, tipo_producao=None):
         return False
 
 # ================================
-# MÓDULO DE APONTAMENTO (Atualizado para OpenCV)
+# MÓDULO DE APONTAMENTO (Tablet / Navegador)
 # ================================
 def modulo_apontamento():
     st.markdown("## 📸 Leitura de Códigos – Apontamento Automático")
-    st.caption("Clique no botão para iniciar a câmera e ler códigos de barras (9 dígitos).")
+    st.caption("Use a câmera do tablet para ler códigos de barras (9 dígitos).")
 
     tipo_producao = st.radio(
         "Selecione o tipo de produção:",
@@ -135,22 +135,80 @@ def modulo_apontamento():
         st.session_state.ultimo_codigo = None
         st.session_state.ultima_leitura = datetime.datetime.now(TZ) - datetime.timedelta(seconds=10)
 
-    start = st.button("📷 Iniciar Leitura", key="start_leitura")
+    # -------------------------------
+    # Captura da câmera via navegador
+    # -------------------------------
+    uploaded_file = st.camera_input("📷 Clique para capturar o código")
 
-    if start:
-        camera = cv2.VideoCapture(0)
-        if not camera.isOpened():
-            st.error("❌ Não foi possível acessar a câmera.")
-            return
+    if uploaded_file:
+        # Converte a imagem enviada em frame OpenCV
+        file_bytes = np.frombuffer(uploaded_file.read(), np.uint8)
+        frame = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
 
-        status_box.success("✅ Câmera inicializada! Aponte o código de barras.")
-        stop = False
+        # -------------------------------
+        # Detectar QR code
+        # -------------------------------
+        detector = cv2.QRCodeDetector()
+        data, points, _ = detector.detectAndDecode(frame)
 
-        while not stop:
-            ret, frame = camera.read()
-            if not ret:
-                status_box.error("❌ Falha ao capturar frame.")
-                break
+        codes = []
+        if data:
+            # Criar objeto compatível com 'code' do fluxo original
+            class Code:
+                def __init__(self, data, points):
+                    self.data = data.encode("utf-8")
+                    self.polygon = points.astype(int) if points is not None else np.array([[0,0]])
+                    self.rect = type('rect', (), {})()
+                    if points is not None:
+                        x, y, w, h = cv2.boundingRect(points.astype(int))
+                        self.rect.left = x
+                        self.rect.top = y
+                        self.rect.width = w
+                        self.rect.height = h
+                    else:
+                        self.rect.left = 0
+                        self.rect.top = 0
+                        self.rect.width = 0
+                        self.rect.height = 0
+
+            codes.append(Code(data, points))
+
+        # -------------------------------
+        # Processamento dos códigos
+        # -------------------------------
+        for code in codes:
+            codigo = code.data.decode("utf-8").strip()
+
+            # Verifica se é um código de 9 dígitos
+            if not (codigo.isdigit() and len(codigo) == 9):
+                pts = np.array([code.polygon], np.int32).reshape((-1,1,2))
+                cv2.polylines(frame, [pts], True, (0,0,255), 2)
+                cv2.putText(frame, codigo, (code.rect.left, code.rect.top - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,0,255), 2)
+                continue
+
+            # Destaca o código válido
+            pts = np.array([code.polygon], np.int32).reshape((-1,1,2))
+            cv2.polylines(frame, [pts], True, (76,209,55), 3)
+            cv2.putText(frame, codigo, (code.rect.left, code.rect.top - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (76,209,55), 2)
+
+            # Verifica histórico para evitar duplicidade
+            tempo_passado = (datetime.datetime.now(TZ) - st.session_state.ultima_leitura).total_seconds()
+            if codigo != st.session_state.ultimo_codigo or tempo_passado > 5:
+                sucesso = salvar_apontamento(codigo, tipo_producao)
+                if sucesso:
+                    status_box.markdown(f"<div class='success'>✅ Código {codigo} registrado!</div>", unsafe_allow_html=True)
+                else:
+                    status_box.markdown(f"<div class='warning'>⚠️ Código {codigo} já registrado hoje.</div>", unsafe_allow_html=True)
+
+                st.session_state.ultimo_codigo = codigo
+                st.session_state.ultima_leitura = datetime.datetime.now(TZ)
+
+        # Mostra histórico e frame processado
+        mostrar_ultimos_apontamentos()
+        stframe.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), use_container_width=True)
+
 
             # -------------------------------
             # Leitura de QR code / código de barras usando OpenCV

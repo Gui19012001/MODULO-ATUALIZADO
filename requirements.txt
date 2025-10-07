@@ -4,4 +4,4 @@ plotly
 supabase
 python-dotenv
 opencv-python-headless
-
+pyzbar

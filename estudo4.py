@@ -11,6 +11,8 @@ from pathlib import Path
 import plotly.express as px
 import plotly.graph_objects as go
 import cv2
+import numpy as np
+
 
 # =============================
 # Carregar variáveis de ambiente

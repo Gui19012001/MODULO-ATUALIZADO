@@ -3,4 +3,5 @@ pandas
 plotly
 supabase
 python-dotenv
-opencv-python
+opencv-python-headless
+

@@ -1,6 +1,6 @@
 streamlit
 pandas
 plotly
-pytz
-supabase-py
+supabase
 python-dotenv
+opencv-python

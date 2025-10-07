@@ -12,6 +12,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import cv2
 import numpy as np
+from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
 
 
 # =============================
@@ -119,7 +120,6 @@ def salvar_apontamento(serie, tipo_producao=None):
 # ================================
 def mostrar_ultimos_apontamentos():
     st.markdown("### 🕒 Últimos Apontamentos")
-    
     if "historico" not in st.session_state:
         st.session_state["historico"] = []
 
@@ -131,11 +131,64 @@ def mostrar_ultimos_apontamentos():
             st.write(f"- Código: {item['codigo']}, Tipo: {item['tipo']}, Hora: {item['hora']}")
 
 # ================================
+# Transformador de vídeo para leitura automática
+# ================================
+class BarcodeDetector(VideoTransformerBase):
+    def __init__(self, tipo_producao):
+        self.tipo_producao = tipo_producao
+        self.ultimo_codigo = None
+        self.ultima_leitura = datetime.datetime.now(TZ) - datetime.timedelta(seconds=10)
+
+    def transform(self, frame):
+        img = frame.to_ndarray(format="bgr24")
+        codes = decode(img)
+        for code in codes:
+            codigo = code.data.decode("utf-8").strip()
+            
+            # Validação: somente 9 dígitos
+            if not (codigo.isdigit() and len(codigo) == 9):
+                pts = np.array([code.polygon], np.int32).reshape((-1,1,2))
+                cv2.polylines(img, [pts], True, (0,0,255), 2)
+                cv2.putText(img, codigo, (code.rect.left, code.rect.top - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,0,255), 2)
+                continue
+
+            # Destaca código válido
+            pts = np.array([code.polygon], np.int32).reshape((-1,1,2))
+            cv2.polylines(img, [pts], True, (76,209,55), 2)
+            cv2.putText(img, codigo, (code.rect.left, code.rect.top - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (76,209,55), 2)
+
+            # Evita duplicidade em curto tempo
+            tempo_passado = (datetime.datetime.now(TZ) - self.ultima_leitura).total_seconds()
+            if codigo != self.ultimo_codigo or tempo_passado > 5:
+                sucesso = salvar_apontamento(codigo, self.tipo_producao)
+                if "status_box" in st.session_state:
+                    status_box = st.session_state["status_box"]
+                    if sucesso:
+                        status_box.markdown(f"<div class='success'>✅ Código {codigo} registrado!</div>", unsafe_allow_html=True)
+                    else:
+                        status_box.markdown(f"<div class='warning'>⚠️ Código {codigo} já registrado hoje.</div>", unsafe_allow_html=True)
+
+                # Atualiza histórico lateral
+                if "historico" not in st.session_state:
+                    st.session_state["historico"] = []
+                st.session_state["historico"].append({
+                    "codigo": codigo,
+                    "tipo": self.tipo_producao,
+                    "hora": datetime.datetime.now(TZ).strftime("%H:%M:%S")
+                })
+
+                self.ultimo_codigo = codigo
+                self.ultima_leitura = datetime.datetime.now(TZ)
+
+        return img
+
+# ================================
 # Módulo de Apontamento
 # ================================
 def modulo_apontamento():
     st.markdown("## 📸 Leitura de Códigos – Apontamento Automático")
-    st.caption("Use a câmera do tablet para ler códigos de barras (9 dígitos).")
 
     tipo_producao = st.radio(
         "Selecione o tipo de produção:",
@@ -144,90 +197,19 @@ def modulo_apontamento():
     )
 
     col1, col2 = st.columns([3, 1.2])
-    stframe = col1.empty()
-    status_box = col2.empty()
     global historico_box
     historico_box = col2.empty()
+    st.session_state["status_box"] = col2.empty()
 
-    if "ultimo_codigo" not in st.session_state:
-        st.session_state.ultimo_codigo = None
-        st.session_state.ultima_leitura = datetime.datetime.now(TZ) - datetime.timedelta(seconds=10)
+    mostrar_ultimos_apontamentos()
 
-    # Captura da câmera via navegador
-    uploaded_file = st.camera_input("📷 Clique para capturar o código")
-
-    if uploaded_file:
-        # Converte imagem em frame OpenCV
-        file_bytes = np.frombuffer(uploaded_file.read(), np.uint8)
-        frame = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-
-        # Detecta QR code
-        detector = cv2.QRCodeDetector()
-        data, points, _ = detector.detectAndDecode(frame)
-
-        codes = []
-        if data:
-            class Code:
-                def __init__(self, data, points):
-                    self.data = data.encode("utf-8")
-                    self.polygon = points.astype(int) if points is not None else np.array([[0,0]])
-                    self.rect = type('rect', (), {})()
-                    if points is not None:
-                        x, y, w, h = cv2.boundingRect(points.astype(int))
-                        self.rect.left = x
-                        self.rect.top = y
-                        self.rect.width = w
-                        self.rect.height = h
-                    else:
-                        self.rect.left = 0
-                        self.rect.top = 0
-                        self.rect.width = 0
-                        self.rect.height = 0
-
-            codes.append(Code(data, points))
-
-        # Processa códigos detectados
-        for code in codes:
-            codigo = code.data.decode("utf-8").strip()
-
-            # Valida código de 9 dígitos
-            if not (codigo.isdigit() and len(codigo) == 9):
-                pts = np.array([code.polygon], np.int32).reshape((-1,1,2))
-                cv2.polylines(frame, [pts], True, (0,0,255), 2)
-                cv2.putText(frame, codigo, (code.rect.left, code.rect.top - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,0,255), 2)
-                continue
-
-            # Destaca código válido
-            pts = np.array([code.polygon], np.int32).reshape((-1,1,2))
-            cv2.polylines(frame, [pts], True, (76,209,55), 3)
-            cv2.putText(frame, codigo, (code.rect.left, code.rect.top - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (76,209,55), 2)
-
-            # Evita duplicidade em curto tempo
-            tempo_passado = (datetime.datetime.now(TZ) - st.session_state.ultima_leitura).total_seconds()
-            if codigo != st.session_state.ultimo_codigo or tempo_passado > 5:
-                sucesso = salvar_apontamento(codigo, tipo_producao)
-                if sucesso:
-                    status_box.markdown(f"<div class='success'>✅ Código {codigo} registrado!</div>", unsafe_allow_html=True)
-                else:
-                    status_box.markdown(f"<div class='warning'>⚠️ Código {codigo} já registrado hoje.</div>", unsafe_allow_html=True)
-
-                # Atualiza histórico em tempo real
-                if "historico" not in st.session_state:
-                    st.session_state["historico"] = []
-                st.session_state["historico"].append({
-                    "codigo": codigo,
-                    "tipo": tipo_producao,
-                    "hora": datetime.datetime.now(TZ).strftime("%H:%M:%S")
-                })
-
-                st.session_state.ultimo_codigo = codigo
-                st.session_state.ultima_leitura = datetime.datetime.now(TZ)
-
-        # Exibe frame processado e histórico
-        mostrar_ultimos_apontamentos()
-        stframe.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), use_container_width=True)
+    webrtc_streamer(
+        key="scanner",
+        video_transformer_factory=lambda: BarcodeDetector(tipo_producao),
+        media_stream_constraints={"video": True, "audio": False},
+        async_transform=True,
+        video_frame_callback=None,
+    )
 # =============================
 # Login centralizado e estilizado
 # =============================

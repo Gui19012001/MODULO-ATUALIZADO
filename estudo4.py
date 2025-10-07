@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 import plotly.express as px
 import plotly.graph_objects as go
+import cv2
 
 # =============================
 # Carregar variáveis de ambiente

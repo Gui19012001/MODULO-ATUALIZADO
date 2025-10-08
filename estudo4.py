@@ -39,6 +39,7 @@ def carregar_checklists():
     return df
 
 def salvar_checklist(serie, resultados, usuario, foto_etiqueta=None, reinspecao=False):
+    # Verifica duplicidade, exceto em caso de reinspeção
     existe = supabase.table("checklists").select("numero_serie").eq("numero_serie", serie).execute()
     if not reinspecao and existe.data:
         st.error("⚠️ INVÁLIDO! DUPLICIDADE – Este Nº de Série já foi inspecionado.")
@@ -60,20 +61,39 @@ def salvar_checklist(serie, resultados, usuario, foto_etiqueta=None, reinspecao=
             st.error(f"Erro ao processar a foto: {e}")
             foto_base64 = None
 
+    # Itera sobre os itens do checklist
     for item, info in resultados.items():
-        supabase.table("checklists").insert({
+        # Monta o payload
+        payload = {
             "numero_serie": serie,
             "item": item,
-            "status": info['status'],
-            "observacoes": info['obs'],
+            "status": info.get('status', ''),
+            "observacoes": info.get('obs', ''),
             "inspetor": usuario,
-            "data_hora": data_hora_utc,  # salva em UTC
+            "data_hora": data_hora_utc,
             "produto_reprovado": "Sim" if reprovado else "Não",
-            "reinspecao": "Sim" if reinspecao else "Não",
-            "foto_etiqueta": foto_base64 if item == "Etiqueta" else None
-        }).execute()
+            "reinspecao": "Sim" if reinspecao else "Não"
+        }
 
-    st.success(f"Checklist salvo no Supabase para o Nº de Série {serie}")
+        # Só inclui a foto para o item "Etiqueta"
+        if item == "Etiqueta" and foto_base64:
+            payload["foto_etiqueta"] = foto_base64
+
+        # Log de debug (opcional)
+        print("Enviando para Supabase:", payload)
+
+        # Tenta enviar para o Supabase
+        try:
+            supabase.table("checklists").insert(payload).execute()
+        except APIError as e:
+            st.error("❌ Erro ao salvar no banco de dados.")
+            st.write("Código:", e.code)
+            st.write("Mensagem:", e.message)
+            st.write("Detalhes:", e.details)
+            st.write("Dica:", e.hint)
+            raise  # relança o erro se quiser encerrar a execução
+
+    st.success(f"✅ Checklist salvo com sucesso para o Nº de Série {serie}")
     return True
 
 def carregar_apontamentos():

@@ -330,6 +330,125 @@ def checklist_qualidade(numero_serie, usuario):
                 salvar_checklist(numero_serie, dados_para_salvar, usuario)
                 st.success(f"Checklist do Nº de Série {numero_serie} salvo com sucesso!")
                 
+# ==============================
+# Checklist de Qualidade (ajustado com palavra-chave)
+# ==============================
+def checklist_qualidade(numero_serie, usuario):
+    st.markdown(f"## ✔️ Checklist de Qualidade – Nº de Série: {numero_serie}")
+
+    perguntas = [
+        "Etiqueta do produto – As informações estão corretas / legíveis conforme modelo e gravação do eixo?",
+        "Placa do Inmetro está correta / fixada e legível? Número corresponde à viga?",
+        "Gravação do número de série da viga está legível e pintada?",
+        "Etiqueta do ABS está conforme? Com número de série compátivel ao da viga? Teste do ABS está aprovado?",
+        "Rodagem – tipo correto? Especifique o modelo",
+        "Graxeiras estão em perfeito estado?",
+        "Sistema de atuação correto? Springs ou cuícas em perfeitas condições? Especifique o modelo:",
+        "Modelo do freio correto? Especifique modelo",
+        "Anéis elásticos devidamente encaixados no orifício?",
+        "Catraca do freio correta? Especifique modelo",
+        "Tampa do cubo correta, livre de avarias e pintura nos critérios?As tampas dos cubos dos ambos os lados são iguais?",
+        "Pintura do eixo livre de oxidação,isento de escorrimento na pintura, pontos sem tinta e camada conforme padrão?",
+        "Os cordões de solda do eixo estão conformes?"
+    ]
+
+    item_keys = {
+        1: "ETIQUETA",
+        2: "PLACA_IMETRO",
+        3: "NUMERO_SERIE_VIGA",
+        4: "TESTE ABS",
+        5: "RODAGEM_MODELO",
+        6: "GRAXEIRAS",
+        7: "SISTEMA_ATUACAO",
+        8: "MODELO_FREIO",
+        9: "ANEIS_ELASTICOS",
+        10: "CATRACA_FREIO",
+        11: "TAMPA_CUBO",
+        12: "PINTURA_EIXO",
+        13: "SOLDA"
+    }
+
+    opcoes_modelos = {
+        5: ["Single", "Aço", "Alumínio", "N/A"],
+        7: ["Spring", "Cuíca", "N/A"],
+        8: ["ABS", "Convencional"],
+        10: ["Automático", "Manual", "N/A"],
+        13: ["Conforme", "Falta de cordão", "Porosidade", "Falta de Fusão"]
+    }
+
+    resultados = {}
+    modelos = {}
+
+    st.write("Clique no botão correspondente a cada item:")
+    st.caption("✅ = Conforme | ❌ = Não Conforme | 🟡 = N/A")
+
+    with st.form(key=f"form_checklist_{numero_serie}"):
+        for i, pergunta in enumerate(perguntas, start=1):
+            cols = st.columns([7, 2, 2])  # pergunta + radio + modelo
+
+            # Pergunta
+            cols[0].markdown(f"**{i}. {pergunta}**")
+
+            # Radio de conformidade
+            escolha = cols[1].radio(
+                "",
+                ["✅", "❌", "🟡"],
+                key=f"resp_{numero_serie}_{i}",
+                horizontal=True,
+                index=None,
+                label_visibility="collapsed"
+            )
+            resultados[i] = escolha
+
+            # Seleção de modelos
+            if i in opcoes_modelos:
+                if i == 14:  # multiselect para Direito/Esquerdo
+                    modelo = cols[2].multiselect(
+                        "Lados",
+                        opcoes_modelos[i],
+                        key=f"modelo_{numero_serie}_{i}",
+                        label_visibility="collapsed"
+                    )
+                else:
+                    modelo = cols[2].selectbox(
+                        "Modelo",
+                        [""] + opcoes_modelos[i],
+                        key=f"modelo_{numero_serie}_{i}",
+                        label_visibility="collapsed"
+                    )
+                modelos[i] = modelo
+            else:
+                modelos[i] = None
+
+        submit = st.form_submit_button("Salvar Checklist")
+
+        if submit:
+            faltando = [i for i, resp in resultados.items() if resp is None]
+            modelos_faltando = [
+                i for i in opcoes_modelos
+                if modelos.get(i) is None or modelos[i] == [] or modelos[i] == ""
+            ]
+
+            if faltando or modelos_faltando:
+                msg = ""
+                if faltando:
+                    msg += f"⚠️ Responda todas as perguntas! Faltam: {[item_keys[i] for i in faltando]}\n"
+                if modelos_faltando:
+                    msg += f"⚠️ Preencha todos os modelos! Faltam: {[item_keys[i] for i in modelos_faltando]}"
+                st.error(msg)
+            else:
+                # Formata para salvar no Supabase usando a palavra-chave
+                dados_para_salvar = {}
+                for i, resp in resultados.items():
+                    chave_item = item_keys.get(i, f"Item_{i}")
+                    dados_para_salvar[chave_item] = {
+                        "status": "Conforme" if resp == "✅" else "Não Conforme" if resp == "❌" else "N/A",
+                        "obs": modelos.get(i)
+                    }
+
+                salvar_checklist(numero_serie, dados_para_salvar, usuario)
+                st.success(f"Checklist do Nº de Série {numero_serie} salvo com sucesso!")
+                
 def checklist_reinspecao(numero_serie, usuario, auto_avancar=False):
     st.markdown(f"## 🔄 Reinspeção – Nº de Série: {numero_serie}")
 
@@ -337,36 +456,40 @@ def checklist_reinspecao(numero_serie, usuario, auto_avancar=False):
         "Etiqueta do produto – As informações estão corretas / legíveis conforme modelo e gravação do eixo?",
         "Placa do Inmetro está correta / fixada e legível? Número corresponde à viga?",
         "Gravação do número de série da viga está legível e pintada?",
-        "Etiqueta do ABS está conforme? Com número de série compátivel ao da viga?",
-        "Teste do ABS está aprovado?",
+        "Etiqueta do ABS está conforme? Com número de série compátivel ao da viga? Teste do ABS está aprovado?",
         "Rodagem – tipo correto? Especifique o modelo",
         "Graxeiras estão em perfeito estado?",
-        "Sistema de atuação correto? Especifique modelo",
-        "Springs ou cuícas em perfeitas condições?",
+        "Sistema de atuação correto? Springs ou cuícas em perfeitas condições? Especifique o modelo:",
         "Modelo do freio correto? Especifique modelo",
         "Anéis elásticos devidamente encaixados no orifício?",
         "Catraca do freio correta? Especifique modelo",
-        "Tampa do cubo correta, livre de avarias e pintura nos critérios?",
-        "As tampas dos cubos dos ambos os lados são iguais? (Direito / Esquerdo)",
-        "Pintura do eixo livre de oxidação, camada conforme padrão?",
-        "Eixo isento de escorrimento na pintura e pontos sem tinta?",
+        "Tampa do cubo correta, livre de avarias e pintura nos critérios?As tampas dos cubos dos ambos os lados são iguais?",
+        "Pintura do eixo livre de oxidação,isento de escorrimento na pintura, pontos sem tinta e camada conforme padrão?",
         "Os cordões de solda do eixo estão conformes?"
     ]
 
     item_keys = {
-        1: "ETIQUETA", 2: "PLACA_IMETRO", 3: "NUMERO_SERIE_VIGA", 4: "ETIQUETA ABS", 5: "TESTE ABS",
-        6: "RODAGEM_MODELO", 7: "GRAXEIRAS", 8: "SISTEMA_ATUACAO", 9: "SPRINGS_CUICAS", 10: "MODELO_FREIO",
-        11: "ANEIS_ELASTICOS", 12: "CATRACA_FREIO", 13: "TAMPA_CUBO", 14: "TAMPAS_LADOS",
-        15: "PINTURA_EIXO", 16: "ESCORRIMENTO_PINTURA", 17: "SOLDA"
+        1: "ETIQUETA",
+        2: "PLACA_IMETRO",
+        3: "NUMERO_SERIE_VIGA",
+        4: "TESTE ABS",
+        5: "RODAGEM_MODELO",
+        6: "GRAXEIRAS",
+        7: "SISTEMA_ATUACAO",
+        8: "MODELO_FREIO",
+        9: "ANEIS_ELASTICOS",
+        10: "CATRACA_FREIO",
+        11: "TAMPA_CUBO",
+        12: "PINTURA_EIXO",
+        13: "SOLDA"
     }
 
     opcoes_modelos = {
-        6: ["Single", "Aço", "Alumínio", "N/A"],
-        8: ["Spring", "Cuíca", "N/A"],
-        10: ["ABS", "Convencional"],
-        12: ["Automático", "Manual", "N/A"],
-        14: ["Direito", "Esquerdo"],
-        17: ["Conforme", "Falta de cordão", "Porosidade", "Falta de Fusão"]
+        5: ["Single", "Aço", "Alumínio", "N/A"],
+        7: ["Spring", "Cuíca", "N/A"],
+        8: ["ABS", "Convencional"],
+        10: ["Automático", "Manual", "N/A"],
+        13: ["Conforme", "Falta de cordão", "Porosidade", "Falta de Fusão"]
     }
 
     resultados = {}

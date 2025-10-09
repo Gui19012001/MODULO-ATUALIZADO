@@ -616,29 +616,27 @@ def mostrar_historico_qualidade():
         use_container_width=True
     )
 
-def painel_dashboard():
-    st.markdown("# 📊 Painel de Apontamentos")
-    
-    # Seleção de tipo de produção
-    if "tipo_producao" not in st.session_state:
-        st.session_state["tipo_producao"] = "Esteira"
+# ================================
+# Página de Apontamento (apenas leitor de código de barras)
+# ================================
+def pagina_apontamento():
+    st.markdown("# 📦 Registrar Apontamento")
 
+    # Tipo de produção
     tipo_producao = st.radio(
         "Tipo de produção:",
         ["Esteira", "Rodagem"],
-        index=0,
         horizontal=True,
-        key="tipo_producao"
+        key="tipo_producao_apontamento"
     )
 
-    # Input de código (sempre ativo)
     if "codigo_barras" not in st.session_state:
         st.session_state["codigo_barras"] = ""
 
     def processar_codigo():
         codigo = st.session_state["codigo_barras"].strip()
         if codigo:
-            sucesso = salvar_apontamento(codigo, st.session_state["tipo_producao"])
+            sucesso = salvar_apontamento(codigo, tipo_producao)
             if sucesso:
                 st.success(f"Código {codigo} registrado com sucesso!")
             else:
@@ -652,15 +650,59 @@ def painel_dashboard():
         placeholder="Aproxime o leitor"
     )
 
-    # Script JS para focar automaticamente
+    # Script para manter o campo sempre em foco
     components.html(
         """
         <script>
-        const input = window.parent.document.querySelector('input[id^="codigo_barras"]');
-        if(input){ input.focus(); }
+        function focarInput(){
+            const input = window.parent.document.querySelector('input[id^="codigo_barras"]');
+            if(input){ input.focus(); }
+        }
+        // foca ao carregar
+        focarInput();
+        // foca novamente após qualquer interação
+        new MutationObserver(focarInput).observe(
+            window.parent.document.body,
+            {childList: true, subtree: true}
+        );
         </script>
         """,
         height=0
+    )
+
+    # ================= Últimos 10 apontamentos =================
+    df_apont = carregar_apontamentos()
+    if not df_apont.empty:
+        df_filtrado = df_apont[df_apont["tipo_producao"].str.contains(tipo_producao, case=False, na=False)]
+        ultimos = df_filtrado.sort_values("data_hora", ascending=False).head(10)
+
+        st.markdown("### 📋 Últimos 10 Apontamentos")
+        st.dataframe(
+            ultimos[["numero_serie", "tipo_producao", "data_hora"]],
+            use_container_width=True
+        )
+    else:
+        st.info("Nenhum apontamento encontrado.")
+
+
+
+
+# ================================
+# Painel Dashboard (sem leitor, só métricas e hora a hora)
+# ================================
+def painel_dashboard():
+    st.markdown("# 📊 Painel de Apontamentos")
+    
+    # Seleção de tipo de produção
+    if "tipo_producao" not in st.session_state:
+        st.session_state["tipo_producao"] = "Esteira"
+
+    tipo_producao = st.radio(
+        "Tipo de produção:",
+        ["Esteira", "Rodagem"],
+        index=0,
+        horizontal=True,
+        key="tipo_producao"
     )
 
     # ======================== filtro de datas ========================
@@ -823,6 +865,7 @@ def painel_dashboard():
     else:
         st.info("Nenhum apontamento registrado no período selecionado.")
 
+
 def dashboard_qualidade():
     st.markdown("# 📊 Dashboard de Qualidade")
 
@@ -947,6 +990,7 @@ def app():
 
     menu = st.sidebar.selectbox("Menu", [
         "Dashboard Produção",
+        "Apontamento",
         "Inspeção de Qualidade",
         "Reinspeção",
         "Histórico de Produção",
@@ -956,6 +1000,9 @@ def app():
 
     if menu == "Dashboard Produção":
         painel_dashboard()
+
+    elif menu == "Apontamento":
+        pagina_apontamento()
 
     elif menu == "Inspeção de Qualidade":
         # ======================== FILTRO DE CÓDIGOS DO DIA ========================
@@ -1048,4 +1095,5 @@ def app():
 
 if __name__ == "__main__":
     app()
+
 

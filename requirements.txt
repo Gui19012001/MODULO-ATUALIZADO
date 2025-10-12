@@ -7,3 +7,4 @@ opencv-python-headless
 pyzbar
 numpy
 streamlit-webrtc
+streamlit-autorefresh

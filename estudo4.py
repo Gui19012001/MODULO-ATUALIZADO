@@ -11,6 +11,15 @@ from pathlib import Path
 import plotly.express as px
 import plotly.graph_objects as go
 
+# ================================
+# Verificação do autorefresh
+# ================================
+try:
+    from streamlit_autorefresh import st_autorefresh
+    AUTORELOAD_AVAILABLE = True
+except ImportError:
+    AUTORELOAD_AVAILABLE = False
+
 # =============================
 # Carregar variáveis de ambiente
 # =============================
@@ -100,8 +109,9 @@ def carregar_apontamentos():
     response = supabase.table("apontamentos").select("*").execute()
     df = pd.DataFrame(response.data)
     if not df.empty:
-        df["data_hora"] = pd.to_datetime(df["data_hora"], utc=True).dt.tz_convert(TZ)
+        df["data_hora"] = pd.to_datetime(df["data_hora"], utc=True, format="ISO8601").dt.tz_convert(TZ)
     return df
+
 
 def salvar_apontamento(serie, tipo_producao=None):
     hoje = datetime.datetime.now(TZ).date()
@@ -201,138 +211,10 @@ def status_emoji_para_texto(emoji):
         return "Não Conforme"
     else:
         return "N/A"
-
-# ==============================
-# Checklist de Qualidade (ajustado com palavra-chave)
-# ==============================
-def checklist_qualidade(numero_serie, usuario):
-    st.markdown(f"## ✔️ Checklist de Qualidade – Nº de Série: {numero_serie}")
-
-    perguntas = [
-        "Etiqueta do produto – As informações estão corretas / legíveis conforme modelo e gravação do eixo?",
-        "Placa do Inmetro está correta / fixada e legível? Número corresponde à viga?",
-        "Gravação do número de série da viga está legível e pintada?",
-        "Etiqueta do ABS está conforme? Com número de série compátivel ao da viga?",
-        "Teste do ABS está aprovado?",
-        "Rodagem – tipo correto? Especifique o modelo",
-        "Graxeiras estão em perfeito estado?",
-        "Sistema de atuação correto? Especifique modelo",
-        "Springs ou cuícas em perfeitas condições?",
-        "Modelo do freio correto? Especifique modelo",
-        "Anéis elásticos devidamente encaixados no orifício?",
-        "Catraca do freio correta? Especifique modelo",
-        "Tampa do cubo correta, livre de avarias e pintura nos critérios?",
-        "As tampas dos cubos dos ambos os lados são iguais? (Direito / Esquerdo)",
-        "Pintura do eixo livre de oxidação, camada conforme padrão?",
-        "Eixo isento de escorrimento na pintura e pontos sem tinta?",
-        "Os cordões de solda do eixo estão conformes?"
-    ]
-
-    item_keys = {
-        1: "ETIQUETA",
-        2: "PLACA_IMETRO",
-        3: "NUMERO_SERIE_VIGA",
-        4: "ETIQUETA ABS",
-        5: "TESTE ABS",
-        6: "RODAGEM_MODELO",
-        7: "GRAXEIRAS",
-        8: "SISTEMA_ATUACAO",
-        9: "SPRINGS_CUICAS",
-        10: "MODELO_FREIO",
-        11: "ANEIS_ELASTICOS",
-        12: "CATRACA_FREIO",
-        13: "TAMPA_CUBO",
-        14: "TAMPAS_LADOS",
-        15: "PINTURA_EIXO",
-        16: "ESCORRIMENTO_PINTURA",
-        17: "SOLDA"
-    }
-
-    opcoes_modelos = {
-        6: ["Single", "Aço", "Alumínio", "N/A"],
-        8: ["Spring", "Cuíca", "N/A"],
-        10: ["ABS", "Convencional"],
-        12: ["Automático", "Manual", "N/A"],
-        14: ["Direito", "Esquerdo"],  # multiselect
-        17: ["Conforme", "Falta de cordão", "Porosidade", "Falta de Fusão"]
-    }
-
-    resultados = {}
-    modelos = {}
-
-    st.write("Clique no botão correspondente a cada item:")
-    st.caption("✅ = Conforme | ❌ = Não Conforme | 🟡 = N/A")
-
-    with st.form(key=f"form_checklist_{numero_serie}"):
-        for i, pergunta in enumerate(perguntas, start=1):
-            cols = st.columns([7, 2, 2])  # pergunta + radio + modelo
-
-            # Pergunta
-            cols[0].markdown(f"**{i}. {pergunta}**")
-
-            # Radio de conformidade
-            escolha = cols[1].radio(
-                "",
-                ["✅", "❌", "🟡"],
-                key=f"resp_{numero_serie}_{i}",
-                horizontal=True,
-                index=None,
-                label_visibility="collapsed"
-            )
-            resultados[i] = escolha
-
-            # Seleção de modelos
-            if i in opcoes_modelos:
-                if i == 14:  # multiselect para Direito/Esquerdo
-                    modelo = cols[2].multiselect(
-                        "Lados",
-                        opcoes_modelos[i],
-                        key=f"modelo_{numero_serie}_{i}",
-                        label_visibility="collapsed"
-                    )
-                else:
-                    modelo = cols[2].selectbox(
-                        "Modelo",
-                        [""] + opcoes_modelos[i],
-                        key=f"modelo_{numero_serie}_{i}",
-                        label_visibility="collapsed"
-                    )
-                modelos[i] = modelo
-            else:
-                modelos[i] = None
-
-        submit = st.form_submit_button("Salvar Checklist")
-
-        if submit:
-            faltando = [i for i, resp in resultados.items() if resp is None]
-            modelos_faltando = [
-                i for i in opcoes_modelos
-                if modelos.get(i) is None or modelos[i] == [] or modelos[i] == ""
-            ]
-
-            if faltando or modelos_faltando:
-                msg = ""
-                if faltando:
-                    msg += f"⚠️ Responda todas as perguntas! Faltam: {[item_keys[i] for i in faltando]}\n"
-                if modelos_faltando:
-                    msg += f"⚠️ Preencha todos os modelos! Faltam: {[item_keys[i] for i in modelos_faltando]}"
-                st.error(msg)
-            else:
-                # Formata para salvar no Supabase usando a palavra-chave
-                dados_para_salvar = {}
-                for i, resp in resultados.items():
-                    chave_item = item_keys.get(i, f"Item_{i}")
-                    dados_para_salvar[chave_item] = {
-                        "status": "Conforme" if resp == "✅" else "Não Conforme" if resp == "❌" else "N/A",
-                        "obs": modelos.get(i)
-                    }
-
-                salvar_checklist(numero_serie, dados_para_salvar, usuario)
-                st.success(f"Checklist do Nº de Série {numero_serie} salvo com sucesso!")
                 
-# ==============================
-# Checklist de Qualidade (ajustado com palavra-chave)
-# ==============================
+import streamlit as st
+import streamlit.components.v1 as components  # necessário para scroll
+
 def checklist_qualidade(numero_serie, usuario):
     st.markdown(f"## ✔️ Checklist de Qualidade – Nº de Série: {numero_serie}")
 
@@ -373,7 +255,7 @@ def checklist_qualidade(numero_serie, usuario):
         7: ["Spring", "Cuíca", "N/A"],
         8: ["ABS", "Convencional"],
         10: ["Automático", "Manual", "N/A"],
-        13: ["Conforme", "Falta de cordão", "Porosidade", "Falta de Fusão"]
+        13: ["Conforme", "Respingo", "Falta de cordão", "Porosidade", "Falta de Fusão"]
     }
 
     resultados = {}
@@ -402,20 +284,12 @@ def checklist_qualidade(numero_serie, usuario):
 
             # Seleção de modelos
             if i in opcoes_modelos:
-                if i == 14:  # multiselect para Direito/Esquerdo
-                    modelo = cols[2].multiselect(
-                        "Lados",
-                        opcoes_modelos[i],
-                        key=f"modelo_{numero_serie}_{i}",
-                        label_visibility="collapsed"
-                    )
-                else:
-                    modelo = cols[2].selectbox(
-                        "Modelo",
-                        [""] + opcoes_modelos[i],
-                        key=f"modelo_{numero_serie}_{i}",
-                        label_visibility="collapsed"
-                    )
+                modelo = cols[2].selectbox(
+                    "Modelo",
+                    [""] + opcoes_modelos[i],
+                    key=f"modelo_{numero_serie}_{i}",
+                    label_visibility="collapsed"
+                )
                 modelos[i] = modelo
             else:
                 modelos[i] = None
@@ -448,10 +322,27 @@ def checklist_qualidade(numero_serie, usuario):
 
                 salvar_checklist(numero_serie, dados_para_salvar, usuario)
                 st.success(f"Checklist do Nº de Série {numero_serie} salvo com sucesso!")
+                st.experimental_rerun()
+
+
                 
-def checklist_reinspecao(numero_serie, usuario, auto_avancar=False):
+def checklist_reinspecao(numero_serie, usuario):
     st.markdown(f"## 🔄 Reinspeção – Nº de Série: {numero_serie}")
 
+    df_checks = carregar_checklists()
+
+    # Pega o último checklist da inspeção original (não reinspeção)
+    df_inspecao = df_checks[
+        (df_checks["numero_serie"] == numero_serie) &
+        (df_checks.get("reinspecao", "Não") != "Sim")
+    ]
+
+    if df_inspecao.empty:
+        st.warning("Nenhum checklist de inspeção encontrado para este número de série.")
+        return False
+
+    checklist_original = df_inspecao.sort_values("data_hora").iloc[-1]
+
     perguntas = [
         "Etiqueta do produto – As informações estão corretas / legíveis conforme modelo e gravação do eixo?",
         "Placa do Inmetro está correta / fixada e legível? Número corresponde à viga?",
@@ -463,8 +354,8 @@ def checklist_reinspecao(numero_serie, usuario, auto_avancar=False):
         "Modelo do freio correto? Especifique modelo",
         "Anéis elásticos devidamente encaixados no orifício?",
         "Catraca do freio correta? Especifique modelo",
-        "Tampa do cubo correta, livre de avarias e pintura nos critérios?As tampas dos cubos dos ambos os lados são iguais?",
-        "Pintura do eixo livre de oxidação,isento de escorrimento na pintura, pontos sem tinta e camada conforme padrão?",
+        "Tampa do cubo correta, livre de avarias e pintura nos critérios? As tampas dos cubos dos ambos os lados são iguais?",
+        "Pintura do eixo livre de oxidação, isento de escorrimento na pintura, pontos sem tinta e camada conforme padrão?",
         "Os cordões de solda do eixo estão conformes?"
     ]
 
@@ -489,7 +380,7 @@ def checklist_reinspecao(numero_serie, usuario, auto_avancar=False):
         7: ["Spring", "Cuíca", "N/A"],
         8: ["ABS", "Convencional"],
         10: ["Automático", "Manual", "N/A"],
-        13: ["Conforme", "Falta de cordão", "Porosidade", "Falta de Fusão"]
+        13: ["Conforme", "Respingo", "Falta de cordão", "Porosidade", "Falta de Fusão"]
     }
 
     resultados = {}
@@ -501,72 +392,63 @@ def checklist_reinspecao(numero_serie, usuario, auto_avancar=False):
     with st.form(key=f"form_reinspecao_{numero_serie}"):
         for i, pergunta in enumerate(perguntas, start=1):
             cols = st.columns([7, 2, 2])
-            cols[0].markdown(f"**{i}. {pergunta}**")
+            chave = item_keys[i]
 
+            # Pega status antigo, mas adaptado se o dado for planificado (não dicionário)
+            status_antigo = checklist_original.get(chave, {}).get("status") if isinstance(checklist_original.get(chave), dict) else checklist_original.get(chave)
+            obs_antigo = checklist_original.get(chave, {}).get("obs", "") if isinstance(checklist_original.get(chave), dict) else ""
+
+            if status_antigo == "Conforme":
+                resp_antiga = "✅"
+            elif status_antigo == "Não Conforme":
+                resp_antiga = "❌"
+            elif status_antigo == "N/A":
+                resp_antiga = "🟡"
+            else:
+                resp_antiga = None
+
+            cols[0].markdown(f"**{i}. {pergunta}**")
             escolha = cols[1].radio(
                 "",
-                ["", "✅", "❌", "🟡"],
+                ["✅", "❌", "🟡"],
                 key=f"resp_reinspecao_{numero_serie}_{i}",
                 horizontal=True,
-                index=0,
+                index=(["✅", "❌", "🟡"].index(resp_antiga) if resp_antiga in ["✅", "❌", "🟡"] else None),
                 label_visibility="collapsed"
             )
-            resultados[i] = None if escolha == "" else escolha
+            resultados[i] = escolha
 
             if i in opcoes_modelos:
-                if i == 14:
-                    modelo = cols[2].multiselect(
-                        "Lados",
-                        opcoes_modelos[i],
-                        key=f"modelo_reinspecao_{numero_serie}_{i}",
-                        label_visibility="collapsed"
-                    )
-                else:
-                    modelo = cols[2].selectbox(
-                        "Modelo",
-                        [""] + opcoes_modelos[i],
-                        key=f"modelo_reinspecao_{numero_serie}_{i}",
-                        label_visibility="collapsed"
-                    )
+                modelo = cols[2].selectbox(
+                    "Modelo",
+                    [""] + opcoes_modelos[i],
+                    index=([""] + opcoes_modelos[i]).index(obs_antigo) if obs_antigo in opcoes_modelos[i] else 0,
+                    key=f"modelo_reinspecao_{numero_serie}_{i}",
+                    label_visibility="collapsed"
+                )
                 modelos[i] = modelo
             else:
-                modelos[i] = None
+                modelos[i] = obs_antigo
 
         submit = st.form_submit_button("Salvar Reinspeção")
 
         if submit:
-            faltando = [i for i, resp in resultados.items() if resp is None]
-            modelos_faltando = [
-                i for i in opcoes_modelos
-                if (modelos.get(i) is None or modelos[i] == [] or modelos[i] == "")
-            ]
+            dados_para_salvar = {}
+            for i, resp in resultados.items():
+                chave_item = item_keys[i]
+                dados_para_salvar[chave_item] = {
+                    "status": "Conforme" if resp == "✅" else "Não Conforme" if resp == "❌" else "N/A",
+                    "obs": modelos.get(i)
+                }
 
-            if faltando or modelos_faltando:
-                msg = ""
-                if faltando:
-                    msg += f"⚠️ Responda todas as perguntas! Faltam: {[item_keys[i] for i in faltando]}\n"
-                if modelos_faltando:
-                    msg += f"⚠️ Preencha todos os modelos! Faltam: {[item_keys[i] for i in modelos_faltando]}"
-                st.error(msg)
-            else:
-                dados_para_salvar = {}
-                for i, resp in resultados.items():
-                    chave_item = item_keys.get(i, f"Item_{i}")
-                    obs = modelos.get(i)
-                    if isinstance(obs, list):
-                        obs = ", ".join(obs)
-                    dados_para_salvar[chave_item] = {
-                        "status": "Conforme" if resp == "✅" else "Não Conforme" if resp == "❌" else "N/A",
-                        "obs": obs
-                    }
+            salvar_checklist(numero_serie, dados_para_salvar, usuario, reinspecao=True)
+            st.success(f"Reinspeção do Nº de Série {numero_serie} salva com sucesso!")
+            return True
 
-                # grava como reinspeção
-                salvar_checklist(numero_serie, dados_para_salvar, usuario, reinspecao=True)
-                st.success(f"Reinspeção do Nº de Série {numero_serie} salva com sucesso!")
+    return False
 
-                # retorna True para indicar conclusão (avança para o próximo)
-                if auto_avancar:
-                    return True
+
+
 
 
 # =============================
@@ -620,9 +502,48 @@ def mostrar_historico_qualidade():
 # Página de Apontamento (apenas leitor de código de barras)
 # ================================
 def pagina_apontamento():
-    st.markdown("# 📦 Registrar Apontamento")
+    st.markdown("#  Registrar Apontamento")
 
-    # Tipo de produção
+    # ================= Produção hora a hora =================
+    st.markdown("### ⏱️ Produção Hora a Hora")
+
+    df_apont = carregar_apontamentos()
+    tipo_producao = st.session_state.get("tipo_producao_apontamento", "Esteira")
+
+    # Filtra apenas do dia atual e pelo tipo de produção
+    df_filtrado = df_apont[
+        (df_apont["tipo_producao"].str.contains(tipo_producao, case=False, na=False)) &
+        (df_apont["data_hora"].dt.date == datetime.datetime.now(TZ).date())
+    ] if not df_apont.empty else pd.DataFrame()
+
+    meta_hora = {
+        datetime.time(6, 0): 22,
+        datetime.time(7, 0): 22,
+        datetime.time(8, 0): 22,
+        datetime.time(9, 0): 22,
+        datetime.time(10, 0): 22,
+        datetime.time(11, 0): 4,
+        datetime.time(12, 0): 18,
+        datetime.time(13, 0): 22,
+        datetime.time(14, 0): 22,
+        datetime.time(15, 0): 12,
+    }
+
+    col_meta = st.columns(len(meta_hora))
+    col_prod = st.columns(len(meta_hora))
+
+    for i, (h, m) in enumerate(meta_hora.items()):
+        produzido = len(df_filtrado[df_filtrado["data_hora"].dt.hour == h.hour])
+        col_meta[i].markdown(
+            f"<div style='background-color:#4CAF50;color:white;padding:10px;border-radius:5px;text-align:center'><b>{h.strftime('%H:%M')}<br>{m}</b></div>",
+            unsafe_allow_html=True
+        )
+        col_prod[i].markdown(
+            f"<div style='background-color:#000000;color:white;padding:10px;border-radius:5px;text-align:center'><b>{h.strftime('%H:%M')}<br>{produzido}</b></div>",
+            unsafe_allow_html=True
+        )
+
+    # ================= Tipo de produção =================
     tipo_producao = st.radio(
         "Tipo de produção:",
         ["Esteira", "Rodagem"],
@@ -633,6 +554,7 @@ def pagina_apontamento():
     if "codigo_barras" not in st.session_state:
         st.session_state["codigo_barras"] = ""
 
+    # ================= Input de leitura =================
     def processar_codigo():
         codigo = st.session_state["codigo_barras"].strip()
         if codigo:
@@ -641,7 +563,7 @@ def pagina_apontamento():
                 st.success(f"Código {codigo} registrado com sucesso!")
             else:
                 st.warning(f"Código {codigo} já registrado hoje ou erro.")
-            st.session_state["codigo_barras"] = ""  # limpa para próxima leitura
+            st.session_state["codigo_barras"] = ""
 
     st.text_input(
         "Leia o Código de Barras:",
@@ -650,7 +572,7 @@ def pagina_apontamento():
         placeholder="Aproxime o leitor"
     )
 
-    # Script para manter o campo sempre em foco
+    # Mantém input sempre em foco
     components.html(
         """
         <script>
@@ -658,9 +580,7 @@ def pagina_apontamento():
             const input = window.parent.document.querySelector('input[id^="codigo_barras"]');
             if(input){ input.focus(); }
         }
-        // foca ao carregar
         focarInput();
-        // foca novamente após qualquer interação
         new MutationObserver(focarInput).observe(
             window.parent.document.body,
             {childList: true, subtree: true}
@@ -671,14 +591,12 @@ def pagina_apontamento():
     )
 
     # ================= Últimos 10 apontamentos =================
-    df_apont = carregar_apontamentos()
-    if not df_apont.empty:
-        df_filtrado = df_apont[df_apont["tipo_producao"].str.contains(tipo_producao, case=False, na=False)]
+    if not df_filtrado.empty:
         ultimos = df_filtrado.sort_values("data_hora", ascending=False).head(10)
-
+        ultimos["data_hora_fmt"] = ultimos["data_hora"].dt.strftime("%d/%m/%Y %H:%M:%S")
         st.markdown("### 📋 Últimos 10 Apontamentos")
         st.dataframe(
-            ultimos[["numero_serie", "tipo_producao", "data_hora"]],
+            ultimos[["numero_serie", "data_hora_fmt"]].rename(columns={"data_hora_fmt": "Hora"}),
             use_container_width=True
         )
     else:
@@ -687,23 +605,20 @@ def pagina_apontamento():
 
 
 
-# ================================
-# Painel Dashboard (sem leitor, só métricas e hora a hora)
-# ================================
-def painel_dashboard():
-    st.markdown("# 📊 Painel de Apontamentos")
-    
-    # Seleção de tipo de produção
-    if "tipo_producao" not in st.session_state:
-        st.session_state["tipo_producao"] = "Esteira"
 
-    tipo_producao = st.radio(
-        "Tipo de produção:",
-        ["Esteira", "Rodagem"],
-        index=0,
-        horizontal=True,
-        key="tipo_producao"
-    )
+
+def painel_dashboard():
+    if AUTORELOAD_AVAILABLE:
+        st_autorefresh(interval=60 * 1000, key="dashboard_refresh")
+    else:
+        st.warning(
+            "Componente 'streamlit-autorefresh' não encontrado. "
+            "Instale com: pip install streamlit-autorefresh (ou use o botão de atualizar)."
+        )
+        if st.button("Atualizar agora"):
+            st.rerun()
+
+    st.markdown("# 📊 Painel de Apontamentos")
 
     # ======================== filtro de datas ========================
     hoje = datetime.datetime.now(TZ).date()
@@ -717,7 +632,9 @@ def painel_dashboard():
     if not df_apont.empty:
         start_date = TZ.localize(datetime.datetime.combine(data_inicio, datetime.time.min))
         end_date = TZ.localize(datetime.datetime.combine(data_fim, datetime.time.max))
-        df_filtrado = df_apont[(df_apont["data_hora"] >= start_date) & (df_apont["data_hora"] <= end_date)]
+        df_filtrado = df_apont[
+            (df_apont["data_hora"] >= start_date) & (df_apont["data_hora"] <= end_date)
+        ]
     else:
         df_filtrado = pd.DataFrame()
 
@@ -739,9 +656,11 @@ def painel_dashboard():
 
     meta_acumulada = 0
     hora_atual = datetime.datetime.now(TZ)
+
+    # só soma meta de horas que já passaram COMPLETAMENTE
     for h, m in meta_hora.items():
-        horario_atual = TZ.localize(datetime.datetime.combine(hoje, h))
-        if hora_atual >= horario_atual:
+        horario_fechado = TZ.localize(datetime.datetime.combine(hoje, h)) + datetime.timedelta(hours=1)
+        if hora_atual >= horario_fechado:
             meta_acumulada += m
 
     atraso = meta_acumulada - total_lidos if total_lidos < meta_acumulada else 0
@@ -758,11 +677,15 @@ def painel_dashboard():
         aprovados = 0
         total_reprovados = 0
         for serie in series_with_checks:
-            checks_all_for_serie = df_checks_filtrado[df_checks_filtrado["numero_serie"] == serie].sort_values("data_hora")
+            checks_all_for_serie = df_checks_filtrado[
+                df_checks_filtrado["numero_serie"] == serie
+            ].sort_values("data_hora")
             if checks_all_for_serie.empty:
                 continue
             teve_reinspecao = (checks_all_for_serie["reinspecao"] == "Sim").any()
-            approved = False if teve_reinspecao else (checks_all_for_serie.tail(1).iloc[0]["produto_reprovado"] == "Não")
+            approved = False if teve_reinspecao else (
+                checks_all_for_serie.tail(1).iloc[0]["produto_reprovado"] == "Não"
+            )
             if approved:
                 aprovados += 1
             else:
@@ -852,8 +775,14 @@ def painel_dashboard():
 
     for i, (h, m) in enumerate(meta_hora.items()):
         produzido = len(df_filtrado[df_filtrado["data_hora"].dt.hour == h.hour])
-        col_meta[i].markdown(f"<div style='background-color:#4CAF50;color:white;padding:10px;border-radius:5px;text-align:center'><b>{h.strftime('%H:%M')}<br>{m}</b></div>", unsafe_allow_html=True)
-        col_prod[i].markdown(f"<div style='background-color:#000000;color:white;padding:10px;border-radius:5px;text-align:center'><b>{h.strftime('%H:%M')}<br>{produzido}</b></div>", unsafe_allow_html=True)
+        col_meta[i].markdown(
+            f"<div style='background-color:#4CAF50;color:white;padding:10px;border-radius:5px;text-align:center'><b>{h.strftime('%H:%M')}<br>{m}</b></div>",
+            unsafe_allow_html=True
+        )
+        col_prod[i].markdown(
+            f"<div style='background-color:#000000;color:white;padding:10px;border-radius:5px;text-align:center'><b>{h.strftime('%H:%M')}<br>{produzido}</b></div>",
+            unsafe_allow_html=True
+        )
 
     # ================== Listagem Esteira / Rodagem ==================
     if not df_filtrado.empty:
@@ -864,6 +793,7 @@ def painel_dashboard():
         st.dataframe(df_rodagem[["numero_serie", "data_hora"]], use_container_width=True)
     else:
         st.info("Nenhum apontamento registrado no período selecionado.")
+
 
 
 def dashboard_qualidade():
@@ -1038,8 +968,6 @@ def app():
 
     elif menu == "Reinspeção":
         usuario = st.session_state['usuario']
-
-        # ======================== REINSPEÇÃO AUTOMÁTICA ========================
         df_checks = carregar_checklists()
 
         if df_checks.empty:
@@ -1053,29 +981,15 @@ def app():
 
             numeros_serie_reinspecao = df_reprovados["numero_serie"].unique() if not df_reprovados.empty else []
 
-            if numeros_serie_reinspecao.size == 0:
+            if len(numeros_serie_reinspecao) == 0:
                 st.info("Nenhum checklist reprovado pendente para reinspeção.")
             else:
-                # Inicializa índice da reinspeção no session_state
-                if "reinspecao_index" not in st.session_state:
-                    st.session_state.reinspecao_index = 0
-
-                idx = st.session_state.reinspecao_index
-
-                if idx < len(numeros_serie_reinspecao):
-                    numero_serie = numeros_serie_reinspecao[idx]
-                    st.markdown(f"### Reinspeção automática – Nº de Série: {numero_serie}")
-
-                    # Chama a função de reinspeção e recebe True se concluído
-                    concluido = checklist_reinspecao(numero_serie, usuario, auto_avancar=True)
-
-                    if concluido:
-                        # Avança para o próximo checklist
-                        st.session_state.reinspecao_index += 1
-                        st.stop()  # Força a atualização da página e exibe o próximo checklist
-                else:
-                    st.success("Todos os checklists reprovados foram reinspecionados!")
-                    st.session_state.reinspecao_index = 0  # Reseta para reinício futuro
+                numero_serie = st.selectbox(
+                    "Selecione o Nº de Série para Reinspeção",
+                    numeros_serie_reinspecao,
+                    index=0
+                )
+                checklist_reinspecao(numero_serie, usuario)
 
     elif menu == "Histórico de Produção":
         mostrar_historico_producao()
@@ -1095,5 +1009,7 @@ def app():
 
 if __name__ == "__main__":
     app()
+
+
 
 

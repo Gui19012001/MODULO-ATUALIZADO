@@ -109,8 +109,10 @@ def carregar_apontamentos():
     response = supabase.table("apontamentos").select("*").execute()
     df = pd.DataFrame(response.data)
     if not df.empty:
-        df["data_hora"] = pd.to_datetime(df["data_hora"], utc=True, format="ISO8601").dt.tz_convert(TZ)
+        # Converte de UTC e aplica fuso horário local
+        df["data_hora"] = pd.to_datetime(df["data_hora"], utc=True).dt.tz_convert(TZ)
     return df
+
 
 
 def salvar_apontamento(serie, tipo_producao=None):

@@ -114,22 +114,31 @@ def carregar_apontamentos():
 
 
 def salvar_apontamento(serie, tipo_producao=None):
-    hoje = datetime.datetime.now(TZ).date()
+    # Usa UTC sempre para evitar problemas de fuso
+    agora_utc = datetime.datetime.now(datetime.timezone.utc)
+    hoje_utc = agora_utc.date()
+
+    # Define o início e fim do dia (em UTC)
+    inicio_utc = datetime.datetime.combine(hoje_utc, datetime.time.min).replace(tzinfo=datetime.timezone.utc)
+    fim_utc = datetime.datetime.combine(hoje_utc, datetime.time.max).replace(tzinfo=datetime.timezone.utc)
+
+    # Verifica se já existe apontamento para o mesmo número de série no dia atual (em UTC)
     response = supabase.table("apontamentos")\
         .select("*")\
         .eq("numero_serie", serie)\
-        .gte("data_hora", datetime.datetime.combine(hoje, datetime.time.min).isoformat())\
-        .lte("data_hora", datetime.datetime.combine(hoje, datetime.time.max).isoformat())\
+        .gte("data_hora", inicio_utc.isoformat())\
+        .lte("data_hora", fim_utc.isoformat())\
         .execute()
 
     if response.data:
         return False  # Já registrado hoje
 
-    data_hora = datetime.datetime.now(TZ).isoformat()
+    # Salva novo apontamento com horário atual em UTC
     dados = {
         "numero_serie": serie,
-        "data_hora": data_hora
+        "data_hora": agora_utc.isoformat()  # Garantido UTC
     }
+
     if tipo_producao is not None:
         dados["tipo_producao"] = tipo_producao
 
@@ -140,6 +149,7 @@ def salvar_apontamento(serie, tipo_producao=None):
     else:
         st.error(f"Erro ao inserir apontamento: {getattr(res, 'error', 'Desconhecido')}")
         return False
+
 
 
 

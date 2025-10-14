@@ -35,7 +35,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 # =============================
 TZ = pytz.timezone("America/Sao_Paulo")
 itens = ["Etiqueta", "Tambor + Parafuso", "Solda", "Pintura", "Borracha ABS"]
-usuarios = {"joao": "1234", "maria": "abcd", "admin": "admin"}
+usuarios = {"admin": "admin","Maria": "maria","Catia": "catia", "Vera": "vera", "Bruno", "bruno"}
 
 # =============================
 # Funções do Supabase
@@ -202,18 +202,6 @@ def login():
             st.experimental_set_query_params()  # força atualização da página
 
 # ================================
-# Configuração Supabase
-# ================================
-env_path = Path(__file__).parent / "teste.env"
-load_dotenv(dotenv_path=env_path)
-
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-TZ = pytz.timezone("America/Sao_Paulo")
-
-# ================================
 # Função utilitária para status
 # ================================
 def status_emoji_para_texto(emoji):
@@ -223,11 +211,8 @@ def status_emoji_para_texto(emoji):
         return "Não Conforme"
     else:
         return "N/A"
-                
-import streamlit as st
-import streamlit.components.v1 as components  # necessário para scroll
-
-def checklist_qualidade(numero_serie, usuario):
+            
+def checklist_qualidade(numero_serie, usuario): 
     st.markdown(f"## ✔️ Checklist de Qualidade – Nº de Série: {numero_serie}")
 
     perguntas = [
@@ -241,7 +226,7 @@ def checklist_qualidade(numero_serie, usuario):
         "Modelo do freio correto? Especifique modelo",
         "Anéis elásticos devidamente encaixados no orifício?",
         "Catraca do freio correta? Especifique modelo",
-        "Tampa do cubo correta, livre de avarias e pintura nos critérios?As tampas dos cubos dos ambos os lados são iguais?",
+        "Tampa do cubo correta, livre de avarias e pintura nos critérios? As tampas dos cubos dos ambos os lados são iguais?",
         "Pintura do eixo livre de oxidação,isento de escorrimento na pintura, pontos sem tinta e camada conforme padrão?",
         "Os cordões de solda do eixo estão conformes?"
     ]
@@ -334,10 +319,8 @@ def checklist_qualidade(numero_serie, usuario):
 
                 salvar_checklist(numero_serie, dados_para_salvar, usuario)
                 st.success(f"Checklist do Nº de Série {numero_serie} salvo com sucesso!")
-                st.experimental_rerun()
 
-
-                
+         
 def checklist_reinspecao(numero_serie, usuario):
     st.markdown(f"## 🔄 Reinspeção – Nº de Série: {numero_serie}")
 

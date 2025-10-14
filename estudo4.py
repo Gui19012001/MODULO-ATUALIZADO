@@ -35,7 +35,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 # =============================
 TZ = pytz.timezone("America/Sao_Paulo")
 itens = ["Etiqueta", "Tambor + Parafuso", "Solda", "Pintura", "Borracha ABS"]
-usuarios = {"admin": "admin","Maria": "maria","Catia": "catia", "Vera": "vera", "Bruno", "bruno"}
+usuarios = {"admin": "admin","Maria": "maria","Catia": "catia", "Vera": "vera", "Bruno":"bruno"}
 
 # =============================
 # Funções do Supabase

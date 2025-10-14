@@ -324,15 +324,18 @@ def checklist_qualidade(numero_serie, usuario):
 def checklist_reinspecao(numero_serie, usuario):
     st.markdown(f"## 🔄 Reinspeção – Nº de Série: {numero_serie}")
 
-    df_checks = carregar_checklists()
+    df_checks = carregar_checklists()  # Sua função que retorna o DataFrame com checklists
 
     # Pega a data de hoje
-    hoje = pd.Timestamp(datetime.now().date())
+    hoje = datetime.now().date()
+
+    # Converte coluna 'data_hora' para datetime se ainda não estiver
+    df_checks["data_hora"] = pd.to_datetime(df_checks["data_hora"])
 
     # Filtra apenas checklists do mesmo dia
-    df_hoje = df_checks[pd.to_datetime(df_checks["data_hora"]).dt.date == hoje.date()]
+    df_hoje = df_checks[df_checks["data_hora"].dt.date == hoje]
 
-    # Pega o último checklist da inspeção original (não reinspeção) do mesmo dia
+    # Filtra apenas o número de série e inspeções originais (não reinspecao)
     df_inspecao = df_hoje[
         (df_hoje["numero_serie"] == numero_serie) &
         (df_hoje.get("reinspecao", "Não") != "Sim")
@@ -395,7 +398,6 @@ def checklist_reinspecao(numero_serie, usuario):
             cols = st.columns([7, 2, 2])
             chave = item_keys[i]
 
-            # Pega status antigo
             status_antigo = checklist_original.get(chave, {}).get("status") if isinstance(checklist_original.get(chave), dict) else checklist_original.get(chave)
             obs_antigo = checklist_original.get(chave, {}).get("obs", "") if isinstance(checklist_original.get(chave), dict) else ""
 
@@ -414,7 +416,7 @@ def checklist_reinspecao(numero_serie, usuario):
                 ["✅", "❌", "🟡"],
                 key=f"resp_reinspecao_{numero_serie}_{i}",
                 horizontal=True,
-                index=(["✅", "❌", "🟡"].index(resp_antiga) if resp_antida in ["✅", "❌", "🟡"] else 0),
+                index=(["✅", "❌", "🟡"].index(resp_antiga) if resp_antiga in ["✅", "❌", "🟡"] else 0),
                 label_visibility="collapsed"
             )
             resultados[i] = escolha
@@ -447,6 +449,7 @@ def checklist_reinspecao(numero_serie, usuario):
             return True
 
     return False
+
 
 
 

@@ -924,7 +924,7 @@ def app():
                     numeros_serie_reinspecao,
                     index=0
                 )
-                checklist_reinspecao(numero_serie, usuario)
+                checklist_qualidade(numero_serie, usuario, supabase)
 
     elif menu == "Histórico de Produção":
         mostrar_historico_producao()

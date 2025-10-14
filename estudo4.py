@@ -320,15 +320,6 @@ def checklist_qualidade(numero_serie, usuario):
                 salvar_checklist(numero_serie, dados_para_salvar, usuario)
                 st.success(f"Checklist do Nº de Série {numero_serie} salvo com sucesso!")
 
-
-import streamlit as st
-import pandas as pd
-from datetime import datetime
-
-import streamlit as st
-import pandas as pd
-from datetime import datetime
-
 def checklist_reinspecao(usuario):
     st.markdown("## 🔄 Reinspeção")
 

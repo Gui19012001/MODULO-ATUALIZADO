@@ -47,58 +47,41 @@ def carregar_checklists():
         df["data_hora"] = pd.to_datetime(df["data_hora"], utc=True).dt.tz_convert(TZ)
     return df
 
-def salvar_checklist(serie, resultados, usuario, foto_etiqueta=None, reinspecao=False):
+def salvar_checklist(serie, resultados, usuario, reinspecao=False):
+    # 🔍 Verifica duplicidade (somente se NÃO for reinspeção)
+    existe = supabase.table("checklists").select("numero_serie").eq("numero_serie", serie).execute()
+
+    if not reinspecao and existe.data and len(existe.data) > 0:
+        st.error("⚠️ INVÁLIDO! Este Nº de Série já foi inspecionado.")
+        return None
+
+    # ⚙️ Determina se o produto foi reprovado
+    reprovado = any(info["status"] == "Não Conforme" for info in resultados.values())
+
+    # 🕒 Hora atual em São Paulo (convertida para UTC)
+    data_hora_utc = datetime.datetime.now(TZ).astimezone(pytz.UTC).isoformat()
+
+    # 💾 Insere cada item do checklist
     try:
-        # Verifica duplicidade (apenas se não for reinspeção)
-        existe = supabase.table("checklists").select("numero_serie").eq("numero_serie", serie).execute()
-        if not reinspecao and existe.data:
-            st.error("⚠️ INVÁLIDO! DUPLICIDADE – Este Nº de Série já foi inspecionado.")
-            return None
+        for item, info in resultados.items():
+            payload = {
+                "numero_serie": serie,
+                "item": item,
+                "status": info.get("status", ""),
+                "observacoes": info.get("obs", ""),
+                "inspetor": usuario,
+                "data_hora": data_hora_utc,
+                "produto_reprovado": "Sim" if reprovado else "Não",
+                "reinspecao": "Sim" if reinspecao else "Não"
+            }
+            supabase.table("checklists").insert(payload).execute()
 
-        # Determina se o produto foi reprovado
-        reprovado = any(info['status'] == "Não Conforme" for info in resultados.values())
-
-        # Data/hora em UTC
-        data_hora_utc = datetime.datetime.now(TZ).astimezone(pytz.UTC).isoformat()
-
-        # Converte a foto em base64 se existir
-        foto_base64 = None
-        if foto_etiqueta is not None:
-            try:
-                foto_bytes = foto_etiqueta.getvalue()
-                foto_base64 = base64.b64encode(foto_bytes).decode()
-            except Exception as e:
-                st.warning(f"⚠️ Não foi possível processar a foto: {e}")
-
-        # ✅ Salva um único registro com todos os resultados como JSON
-        payload = {
-            "numero_serie": serie,
-            "inspetor": usuario,
-            "data_hora": data_hora_utc,
-            "checklist_detalhes": resultados,  # dicionário completo (armazenado como JSON)
-            "produto_reprovado": "Sim" if reprovado else "Não",
-            "reinspecao": "Sim" if reinspecao else "Não",
-        }
-
-        if foto_base64:
-            payload["foto_etiqueta"] = foto_base64
-
-        # Envia para Supabase
-        response = supabase.table("checklists").insert(payload).execute()
-
-        if hasattr(response, "data") and response.data:
-            st.success(f"✅ Checklist salvo com sucesso para o Nº de Série {serie}")
-            return True
-        else:
-            st.error("❌ Erro: resposta inesperada do banco.")
-            st.write(response)
-            return False
+        st.success(f"✅ Checklist salvo com sucesso para o Nº de Série {serie}")
+        return True
 
     except Exception as e:
-        st.error("❌ Erro ao salvar checklist.")
-        st.write(e)
+        st.error(f"❌ Erro ao salvar checklist: {e}")
         return False
-
 
 
 def carregar_apontamentos():

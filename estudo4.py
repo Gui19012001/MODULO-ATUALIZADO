@@ -321,37 +321,39 @@ def checklist_qualidade(numero_serie, usuario):
                 st.success(f"Checklist do Nº de Série {numero_serie} salvo com sucesso!")
 
 
+from datetime import datetime
+
 def checklist_reinspecao(numero_serie, usuario):
     st.markdown(f"## 🔄 Reinspeção – Nº de Série: {numero_serie}")
 
-    df_checks = carregar_checklists()  # Sua função que retorna o DataFrame com checklists
+    df_checks = carregar_checklists()  # Função que retorna o DataFrame com todos os checklists
 
-    # Pega a data de hoje
-    hoje = datetime.now().date()
-
-    # Converte coluna 'data_hora' para datetime se ainda não estiver
-    df_checks["data_hora"] = pd.to_datetime(df_checks["data_hora"])
-
-    # Filtra apenas checklists do mesmo dia
-    df_hoje = df_checks[df_checks["data_hora"].dt.date == hoje]
-
-    # Filtra apenas o número de série e inspeções originais (não reinspecao)
-    df_inspecao = df_hoje[
-        (df_hoje["numero_serie"] == numero_serie) &
-        (df_hoje.get("reinspecao", "Não") != "Sim")
+    # Filtra apenas checklists do mesmo número de série e não reinspecionados
+    df_inspecao = df_checks[
+        (df_checks["numero_serie"] == numero_serie) &
+        (df_checks.get("reinspecao", "Não") != "Sim")
     ]
 
     if df_inspecao.empty:
+        st.warning("Nenhum checklist de inspeção encontrado para este número de série.")
+        return False
+
+    # Considera apenas os checklists do mesmo dia
+    hoje = datetime.now().date()
+    df_inspecao["data_hora"] = pd.to_datetime(df_inspecao["data_hora"])
+    df_inspecao_mesmo_dia = df_inspecao[df_inspecao["data_hora"].dt.date == hoje]
+
+    if df_inspecao_mesmo_dia.empty:
         st.warning("Nenhum checklist de inspeção encontrado para este número de série hoje.")
         return False
 
-    checklist_original = df_inspecao.sort_values("data_hora").iloc[-1]
+    checklist_original = df_inspecao_mesmo_dia.sort_values("data_hora").iloc[-1]
 
     perguntas = [
         "Etiqueta do produto – As informações estão corretas / legíveis conforme modelo e gravação do eixo?",
         "Placa do Inmetro está correta / fixada e legível? Número corresponde à viga?",
         "Gravação do número de série da viga está legível e pintada?",
-        "Etiqueta do ABS está conforme? Com número de série compatível ao da viga? Teste do ABS está aprovado?",
+        "Etiqueta do ABS está conforme? Com número de série compátivel ao da viga? Teste do ABS está aprovado?",
         "Rodagem – tipo correto? Especifique o modelo",
         "Graxeiras estão em perfeito estado?",
         "Sistema de atuação correto? Springs ou cuícas em perfeitas condições? Especifique o modelo:",
@@ -398,6 +400,7 @@ def checklist_reinspecao(numero_serie, usuario):
             cols = st.columns([7, 2, 2])
             chave = item_keys[i]
 
+            # Status antigo
             status_antigo = checklist_original.get(chave, {}).get("status") if isinstance(checklist_original.get(chave), dict) else checklist_original.get(chave)
             obs_antigo = checklist_original.get(chave, {}).get("obs", "") if isinstance(checklist_original.get(chave), dict) else ""
 
@@ -416,7 +419,7 @@ def checklist_reinspecao(numero_serie, usuario):
                 ["✅", "❌", "🟡"],
                 key=f"resp_reinspecao_{numero_serie}_{i}",
                 horizontal=True,
-                index=(["✅", "❌", "🟡"].index(resp_antiga) if resp_antiga in ["✅", "❌", "🟡"] else 0),
+                index=(["✅", "❌", "🟡"].index(resp_antiga) if resp_antida in ["✅", "❌", "🟡"] else 0),
                 label_visibility="collapsed"
             )
             resultados[i] = escolha
@@ -449,15 +452,6 @@ def checklist_reinspecao(numero_serie, usuario):
             return True
 
     return False
-
-
-
-
-
-
-
-
-
 
 # =============================
 # Histórico Produção

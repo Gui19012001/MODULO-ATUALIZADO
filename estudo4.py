@@ -48,6 +48,7 @@ def carregar_checklists():
     return df
 
 def salvar_checklist(serie, resultados, usuario, foto_etiqueta=None, reinspecao=False):
+    # Checa duplicidade
     existe = supabase.table("checklists").select("numero_serie").eq("numero_serie", serie).execute()
     if not reinspecao and existe.data:
         st.error("⚠️ INVÁLIDO! DUPLICIDADE – Este Nº de Série já foi inspecionado.")
@@ -56,10 +57,10 @@ def salvar_checklist(serie, resultados, usuario, foto_etiqueta=None, reinspecao=
     # Determina se o produto foi reprovado
     reprovado = any(info['status'] == "Não Conforme" for info in resultados.values())
 
-    # Pega a hora atual em São Paulo e converte para UTC
-    data_hora_utc = datetime.datetime.now(TZ).astimezone(pytz.UTC).isoformat()
+    # Data/hora em UTC
+    data_hora_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-    # Converte a foto para base64 se houver
+    # Foto em base64 (se enviada)
     foto_base64 = None
     if foto_etiqueta is not None:
         try:
@@ -67,24 +68,32 @@ def salvar_checklist(serie, resultados, usuario, foto_etiqueta=None, reinspecao=
             foto_base64 = base64.b64encode(foto_bytes).decode()
         except Exception as e:
             st.error(f"Erro ao processar a foto: {e}")
-            foto_base64 = None
 
+    # Monta os registros de uma vez
+    registros = []
     for item, info in resultados.items():
-        supabase.table("checklists").insert({
+        registros.append({
             "numero_serie": serie,
             "item": item,
             "status": info['status'],
             "observacoes": info['obs'],
             "inspetor": usuario,
-            "data_hora": data_hora_utc,  # salva em UTC
+            "data_hora": data_hora_utc,
             "produto_reprovado": "Sim" if reprovado else "Não",
             "reinspecao": "Sim" if reinspecao else "Não",
             "foto_etiqueta": foto_base64 if item == "Etiqueta" else None
-        }).execute()
+        })
 
-    st.success(f"Checklist salvo no Supabase para o Nº de Série {serie}")
-    return True
+    # Faz um único insert
+    res = supabase.table("checklists").insert(registros).execute()
 
+    # Verifica resultado
+    if res.data:
+        st.success(f"Checklist salvo no Supabase para o Nº de Série {serie}")
+        return True
+    else:
+        st.error(f"Erro ao salvar checklist: {getattr(res, 'error', res)}")
+        return False
 
 def carregar_apontamentos():
     response = supabase.table("apontamentos").select("*").execute()

@@ -47,41 +47,43 @@ def carregar_checklists():
         df["data_hora"] = pd.to_datetime(df["data_hora"], utc=True).dt.tz_convert(TZ)
     return df
 
-def salvar_checklist(serie, resultados, usuario, reinspecao=False):
-    # 🔍 Verifica duplicidade (somente se NÃO for reinspeção)
+def salvar_checklist(serie, resultados, usuario, foto_etiqueta=None, reinspecao=False):
     existe = supabase.table("checklists").select("numero_serie").eq("numero_serie", serie).execute()
-
-    if not reinspecao and existe.data and len(existe.data) > 0:
-        st.error("⚠️ INVÁLIDO! Este Nº de Série já foi inspecionado.")
+    if not reinspecao and existe.data:
+        st.error("⚠️ INVÁLIDO! DUPLICIDADE – Este Nº de Série já foi inspecionado.")
         return None
 
-    # ⚙️ Determina se o produto foi reprovado
-    reprovado = any(info["status"] == "Não Conforme" for info in resultados.values())
+    # Determina se o produto foi reprovado
+    reprovado = any(info['status'] == "Não Conforme" for info in resultados.values())
 
-    # 🕒 Hora atual em São Paulo (convertida para UTC)
+    # Pega a hora atual em São Paulo e converte para UTC
     data_hora_utc = datetime.datetime.now(TZ).astimezone(pytz.UTC).isoformat()
 
-    # 💾 Insere cada item do checklist
-    try:
-        for item, info in resultados.items():
-            payload = {
-                "numero_serie": serie,
-                "item": item,
-                "status": info.get("status", ""),
-                "observacoes": info.get("obs", ""),
-                "inspetor": usuario,
-                "data_hora": data_hora_utc,
-                "produto_reprovado": "Sim" if reprovado else "Não",
-                "reinspecao": "Sim" if reinspecao else "Não"
-            }
-            supabase.table("checklists").insert(payload).execute()
+    # Converte a foto para base64 se houver
+    foto_base64 = None
+    if foto_etiqueta is not None:
+        try:
+            foto_bytes = foto_etiqueta.getvalue()
+            foto_base64 = base64.b64encode(foto_bytes).decode()
+        except Exception as e:
+            st.error(f"Erro ao processar a foto: {e}")
+            foto_base64 = None
 
-        st.success(f"✅ Checklist salvo com sucesso para o Nº de Série {serie}")
-        return True
+    for item, info in resultados.items():
+        supabase.table("checklists").insert({
+            "numero_serie": serie,
+            "item": item,
+            "status": info['status'],
+            "observacoes": info['obs'],
+            "inspetor": usuario,
+            "data_hora": data_hora_utc,  # salva em UTC
+            "produto_reprovado": "Sim" if reprovado else "Não",
+            "reinspecao": "Sim" if reinspecao else "Não",
+            "foto_etiqueta": foto_base64 if item == "Etiqueta" else None
+        }).execute()
 
-    except Exception as e:
-        st.error(f"❌ Erro ao salvar checklist: {e}")
-        return False
+    st.success(f"Checklist salvo no Supabase para o Nº de Série {serie}")
+    return True
 
 
 def carregar_apontamentos():

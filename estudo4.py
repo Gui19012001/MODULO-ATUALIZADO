@@ -213,9 +213,17 @@ def status_emoji_para_texto(emoji):
     else:
         return "N/A"
             
-def checklist_qualidade(numero_serie, usuario): 
+def checklist_qualidade(numero_serie, usuario):
     st.markdown(f"## ✔️ Checklist de Qualidade – Nº de Série: {numero_serie}")
 
+    # Checa se já foi inspecionado no Supabase
+    existe = supabase.table("checklists").select("id").eq("numero_serie", numero_serie).execute()
+
+    if existe.data:
+        st.warning("⚠️ Este número de série já possui checklist registrado!")
+        return  # não mostra o formulário
+
+    # ... só mostra daqui pra frente se NÃO existir
     perguntas = [
         "Etiqueta do produto – As informações estão corretas / legíveis conforme modelo e gravação do eixo?",
         "Placa do Inmetro está correta / fixada e legível? Número corresponde à viga?",
@@ -246,14 +254,6 @@ def checklist_qualidade(numero_serie, usuario):
         11: "TAMPA_CUBO",
         12: "PINTURA_EIXO",
         13: "SOLDA"
-    }
-
-    opcoes_modelos = {
-        5: ["Single", "Aço", "Alumínio", "N/A"],
-        7: ["Spring", "Cuíca", "N/A"],
-        8: ["ABS", "Convencional"],
-        10: ["Automático", "Manual", "N/A"],
-        13: ["Conforme", "Respingo", "Falta de cordão", "Porosidade", "Falta de Fusão"]
     }
 
     resultados = {}

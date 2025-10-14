@@ -191,69 +191,132 @@ def status_emoji_para_texto(emoji):
     else:
         return "N/A"
 
-def checklist_qualidade(numero_serie, usuario, supabase):
+# ================================
+# Função utilitária para status
+# ================================
+def status_emoji_para_texto(emoji):
+    if emoji == "✅":
+        return "Conforme"
+    elif emoji == "❌":
+        return "Não Conforme"
+    else:
+        return "N/A"
+            
+def checklist_qualidade(numero_serie, usuario): 
     st.markdown(f"## ✔️ Checklist de Qualidade – Nº de Série: {numero_serie}")
 
     perguntas = [
         "Etiqueta do produto – As informações estão corretas / legíveis conforme modelo e gravação do eixo?",
         "Placa do Inmetro está correta / fixada e legível? Número corresponde à viga?",
         "Gravação do número de série da viga está legível e pintada?",
-        "Etiqueta do ABS está conforme? Com número de série compatível ao da viga? Teste do ABS está aprovado?",
-        "Pintura do eixo livre de oxidação, isento de escorrimento, pontos sem tinta e camada conforme padrão?",
+        "Etiqueta do ABS está conforme? Com número de série compátivel ao da viga? Teste do ABS está aprovado?",
+        "Rodagem – tipo correto? Especifique o modelo",
+        "Graxeiras estão em perfeito estado?",
+        "Sistema de atuação correto? Springs ou cuícas em perfeitas condições? Especifique o modelo:",
+        "Modelo do freio correto? Especifique modelo",
+        "Anéis elásticos devidamente encaixados no orifício?",
+        "Catraca do freio correta? Especifique modelo",
+        "Tampa do cubo correta, livre de avarias e pintura nos critérios? As tampas dos cubos dos ambos os lados são iguais?",
+        "Pintura do eixo livre de oxidação,isento de escorrimento na pintura, pontos sem tinta e camada conforme padrão?",
         "Os cordões de solda do eixo estão conformes?"
     ]
 
+    item_keys = {
+        1: "ETIQUETA",
+        2: "PLACA_IMETRO",
+        3: "NUMERO_SERIE_VIGA",
+        4: "TESTE ABS",
+        5: "RODAGEM_MODELO",
+        6: "GRAXEIRAS",
+        7: "SISTEMA_ATUACAO",
+        8: "MODELO_FREIO",
+        9: "ANEIS_ELASTICOS",
+        10: "CATRACA_FREIO",
+        11: "TAMPA_CUBO",
+        12: "PINTURA_EIXO",
+        13: "SOLDA"
+    }
+
+    opcoes_modelos = {
+        5: ["Single", "Aço", "Alumínio", "N/A"],
+        7: ["Spring", "Cuíca", "N/A"],
+        8: ["ABS", "Convencional"],
+        10: ["Automático", "Manual", "N/A"],
+        13: ["Conforme", "Respingo", "Falta de cordão", "Porosidade", "Falta de Fusão"]
+    }
+
+    resultados = {}
+    modelos = {}
+
+    st.write("Clique no botão correspondente a cada item:")
     st.caption("✅ = Conforme | ❌ = Não Conforme | 🟡 = N/A")
 
-    if "resultados" not in st.session_state:
-        st.session_state.resultados = {}
-
-    with st.form(key=f"form_{numero_serie}"):
+    with st.form(key=f"form_checklist_{numero_serie}"):
         for i, pergunta in enumerate(perguntas, start=1):
-            st.session_state.resultados[i] = st.radio(
-                f"{i}. {pergunta}",
+            cols = st.columns([7, 2, 2])  # pergunta + radio + modelo
+
+            # Pergunta
+            cols[0].markdown(f"**{i}. {pergunta}**")
+
+            # Radio de conformidade
+            escolha = cols[1].radio(
+                "",
                 ["✅", "❌", "🟡"],
-                key=f"{numero_serie}_{i}",
+                key=f"resp_{numero_serie}_{i}",
                 horizontal=True,
-                index=None
+                index=None,
+                label_visibility="collapsed"
             )
+            resultados[i] = escolha
 
-        submit = st.form_submit_button("💾 Salvar Checklist")
+            # Seleção de modelos
+            if i in opcoes_modelos:
+                if i == 14:  # multiselect para Direito/Esquerdo
+                    modelo = cols[2].multiselect(
+                        "Lados",
+                        opcoes_modelos[i],
+                        key=f"modelo_{numero_serie}_{i}",
+                        label_visibility="collapsed"
+                    )
+                else:
+                    modelo = cols[2].selectbox(
+                        "Modelo",
+                        [""] + opcoes_modelos[i],
+                        key=f"modelo_{numero_serie}_{i}",
+                        label_visibility="collapsed"
+                    )
+                modelos[i] = modelo
+            else:
+                modelos[i] = None
 
-    if submit:
-        resultados = st.session_state.resultados
-        faltando = [i for i, resp in resultados.items() if resp is None]
+        submit = st.form_submit_button("Salvar Checklist")
 
-        if faltando:
-            st.error("⚠️ Responda todas as perguntas antes de salvar.")
-        else:
-            # Verifica se já existe checklist salvo para esse número
-            hoje = datetime.now().date()
-            ja_salvo = supabase.table("checklists")\
-                .select("numero_serie")\
-                .eq("numero_serie", numero_serie)\
-                .eq("data", str(hoje))\
-                .execute()
+        if submit:
+            faltando = [i for i, resp in resultados.items() if resp is None]
+            modelos_faltando = [
+                i for i in opcoes_modelos
+                if modelos.get(i) is None or modelos[i] == [] or modelos[i] == ""
+            ]
 
-            if ja_salvo.data:
-                st.warning("⚠️ Esse número de série já foi inspecionado hoje.")
-                return
+            if faltando or modelos_faltando:
+                msg = ""
+                if faltando:
+                    msg += f"⚠️ Responda todas as perguntas! Faltam: {[item_keys[i] for i in faltando]}\n"
+                if modelos_faltando:
+                    msg += f"⚠️ Preencha todos os modelos! Faltam: {[item_keys[i] for i in modelos_faltando]}"
+                st.error(msg)
+            else:
+                # Formata para salvar no Supabase usando a palavra-chave
+                dados_para_salvar = {}
+                for i, resp in resultados.items():
+                    chave_item = item_keys.get(i, f"Item_{i}")
+                    dados_para_salvar[chave_item] = {
+                        "status": "Conforme" if resp == "✅" else "Não Conforme" if resp == "❌" else "N/A",
+                        "obs": modelos.get(i)
+                    }
 
-            dados = {
-                "numero_serie": numero_serie,
-                "usuario": usuario,
-                "data": str(hoje),
-                "respostas": resultados
-            }
-
-            try:
-                supabase.table("checklists").insert(dados).execute()
-                st.success(f"Checklist do Nº {numero_serie} salvo com sucesso!")
-                time.sleep(1)
-                st.rerun()
-            except Exception as e:
-                st.error(f"Erro ao salvar: {e}")
-
+                salvar_checklist(numero_serie, dados_para_salvar, usuario)
+                st.success(f"Checklist do Nº de Série {numero_serie} salvo com sucesso!")
 
 
 def checklist_reinspecao(numero_serie, usuario):
@@ -924,7 +987,7 @@ def app():
                     numeros_serie_reinspecao,
                     index=0
                 )
-                checklist_qualidade(numero_serie, usuario, supabase)
+                checklist_qualidade(numero_serie, usuario)
 
     elif menu == "Histórico de Produção":
         mostrar_historico_producao()

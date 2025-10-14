@@ -321,8 +321,6 @@ def checklist_qualidade(numero_serie, usuario):
                 st.success(f"Checklist do Nº de Série {numero_serie} salvo com sucesso!")
 
 
-from datetime import datetime
-
 def checklist_reinspecao(numero_serie, usuario):
     st.markdown(f"## 🔄 Reinspeção – Nº de Série: {numero_serie}")
 

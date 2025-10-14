@@ -47,63 +47,59 @@ def carregar_checklists():
         df["data_hora"] = pd.to_datetime(df["data_hora"], utc=True).dt.tz_convert(TZ)
     return df
 
+
 def salvar_checklist(serie, resultados, usuario, foto_etiqueta=None, reinspecao=False):
-    # Verifica duplicidade, exceto em caso de reinspeção
-    existe = supabase.table("checklists").select("numero_serie").eq("numero_serie", serie).execute()
-    if not reinspecao and existe.data:
-        st.error("⚠️ INVÁLIDO! DUPLICIDADE – Este Nº de Série já foi inspecionado.")
-        return None
+    try:
+        # Verifica duplicidade (apenas se não for reinspeção)
+        existe = supabase.table("checklists").select("numero_serie").eq("numero_serie", serie).execute()
+        if not reinspecao and existe.data:
+            st.error("⚠️ INVÁLIDO! DUPLICIDADE – Este Nº de Série já foi inspecionado.")
+            return None
 
-    # Determina se o produto foi reprovado
-    reprovado = any(info['status'] == "Não Conforme" for info in resultados.values())
+        # Determina se o produto foi reprovado
+        reprovado = any(info['status'] == "Não Conforme" for info in resultados.values())
 
-    # Pega a hora atual em São Paulo e converte para UTC
-    data_hora_utc = datetime.datetime.now(TZ).astimezone(pytz.UTC).isoformat()
+        # Data/hora em UTC
+        data_hora_utc = datetime.datetime.now(TZ).astimezone(pytz.UTC).isoformat()
 
-    # Converte a foto para base64 se houver
-    foto_base64 = None
-    if foto_etiqueta is not None:
-        try:
-            foto_bytes = foto_etiqueta.getvalue()
-            foto_base64 = base64.b64encode(foto_bytes).decode()
-        except Exception as e:
-            st.error(f"Erro ao processar a foto: {e}")
-            foto_base64 = None
+        # Converte a foto em base64 se existir
+        foto_base64 = None
+        if foto_etiqueta is not None:
+            try:
+                foto_bytes = foto_etiqueta.getvalue()
+                foto_base64 = base64.b64encode(foto_bytes).decode()
+            except Exception as e:
+                st.warning(f"⚠️ Não foi possível processar a foto: {e}")
 
-    # Itera sobre os itens do checklist
-    for item, info in resultados.items():
-        # Monta o payload
+        # ✅ Salva um único registro com todos os resultados como JSON
         payload = {
             "numero_serie": serie,
-            "item": item,
-            "status": info.get('status', ''),
-            "observacoes": info.get('obs', ''),
             "inspetor": usuario,
             "data_hora": data_hora_utc,
+            "checklist_detalhes": resultados,  # dicionário completo (armazenado como JSON)
             "produto_reprovado": "Sim" if reprovado else "Não",
-            "reinspecao": "Sim" if reinspecao else "Não"
+            "reinspecao": "Sim" if reinspecao else "Não",
         }
 
-        # Só inclui a foto para o item "Etiqueta"
-        if item == "Etiqueta" and foto_base64:
+        if foto_base64:
             payload["foto_etiqueta"] = foto_base64
 
-        # Log de debug (opcional)
-        print("Enviando para Supabase:", payload)
+        # Envia para Supabase
+        response = supabase.table("checklists").insert(payload).execute()
 
-        # Tenta enviar para o Supabase
-        try:
-            supabase.table("checklists").insert(payload).execute()
-        except APIError as e:
-            st.error("❌ Erro ao salvar no banco de dados.")
-            st.write("Código:", e.code)
-            st.write("Mensagem:", e.message)
-            st.write("Detalhes:", e.details)
-            st.write("Dica:", e.hint)
-            raise  # relança o erro se quiser encerrar a execução
+        if hasattr(response, "data") and response.data:
+            st.success(f"✅ Checklist salvo com sucesso para o Nº de Série {serie}")
+            return True
+        else:
+            st.error("❌ Erro: resposta inesperada do banco.")
+            st.write(response)
+            return False
 
-    st.success(f"✅ Checklist salvo com sucesso para o Nº de Série {serie}")
-    return True
+    except Exception as e:
+        st.error("❌ Erro ao salvar checklist.")
+        st.write(e)
+        return False
+
 
 def carregar_apontamentos():
     response = supabase.table("apontamentos").select("*").execute()
@@ -212,6 +208,10 @@ def status_emoji_para_texto(emoji):
     else:
         return "N/A"
             
+import streamlit as st
+from datetime import datetime
+import time
+
 def checklist_qualidade(numero_serie, usuario): 
     st.markdown(f"## ✔️ Checklist de Qualidade – Nº de Série: {numero_serie}")
 
@@ -219,7 +219,7 @@ def checklist_qualidade(numero_serie, usuario):
         "Etiqueta do produto – As informações estão corretas / legíveis conforme modelo e gravação do eixo?",
         "Placa do Inmetro está correta / fixada e legível? Número corresponde à viga?",
         "Gravação do número de série da viga está legível e pintada?",
-        "Etiqueta do ABS está conforme? Com número de série compátivel ao da viga? Teste do ABS está aprovado?",
+        "Etiqueta do ABS está conforme? Com número de série compatível ao da viga? Teste do ABS está aprovado?",
         "Rodagem – tipo correto? Especifique o modelo",
         "Graxeiras estão em perfeito estado?",
         "Sistema de atuação correto? Springs ou cuícas em perfeitas condições? Especifique o modelo:",
@@ -227,7 +227,7 @@ def checklist_qualidade(numero_serie, usuario):
         "Anéis elásticos devidamente encaixados no orifício?",
         "Catraca do freio correta? Especifique modelo",
         "Tampa do cubo correta, livre de avarias e pintura nos critérios? As tampas dos cubos dos ambos os lados são iguais?",
-        "Pintura do eixo livre de oxidação,isento de escorrimento na pintura, pontos sem tinta e camada conforme padrão?",
+        "Pintura do eixo livre de oxidação, isento de escorrimento na pintura, pontos sem tinta e camada conforme padrão?",
         "Os cordões de solda do eixo estão conformes?"
     ]
 
@@ -235,7 +235,7 @@ def checklist_qualidade(numero_serie, usuario):
         1: "ETIQUETA",
         2: "PLACA_IMETRO",
         3: "NUMERO_SERIE_VIGA",
-        4: "TESTE ABS",
+        4: "TESTE_ABS",
         5: "RODAGEM_MODELO",
         6: "GRAXEIRAS",
         7: "SISTEMA_ATUACAO",
@@ -255,21 +255,20 @@ def checklist_qualidade(numero_serie, usuario):
         13: ["Conforme", "Respingo", "Falta de cordão", "Porosidade", "Falta de Fusão"]
     }
 
-    resultados = {}
-    modelos = {}
-
-    st.write("Clique no botão correspondente a cada item:")
     st.caption("✅ = Conforme | ❌ = Não Conforme | 🟡 = N/A")
+
+    # Evita recriar widgets a cada reload
+    if "resultados" not in st.session_state:
+        st.session_state.resultados = {}
+    if "modelos" not in st.session_state:
+        st.session_state.modelos = {}
 
     with st.form(key=f"form_checklist_{numero_serie}"):
         for i, pergunta in enumerate(perguntas, start=1):
-            cols = st.columns([7, 2, 2])  # pergunta + radio + modelo
-
-            # Pergunta
+            cols = st.columns([7, 2, 2])
             cols[0].markdown(f"**{i}. {pergunta}**")
 
-            # Radio de conformidade
-            escolha = cols[1].radio(
+            st.session_state.resultados[i] = cols[1].radio(
                 "",
                 ["✅", "❌", "🟡"],
                 key=f"resp_{numero_serie}_{i}",
@@ -277,48 +276,54 @@ def checklist_qualidade(numero_serie, usuario):
                 index=None,
                 label_visibility="collapsed"
             )
-            resultados[i] = escolha
 
-            # Seleção de modelos
             if i in opcoes_modelos:
-                modelo = cols[2].selectbox(
+                st.session_state.modelos[i] = cols[2].selectbox(
                     "Modelo",
                     [""] + opcoes_modelos[i],
                     key=f"modelo_{numero_serie}_{i}",
                     label_visibility="collapsed"
                 )
-                modelos[i] = modelo
             else:
-                modelos[i] = None
+                st.session_state.modelos[i] = None
 
-        submit = st.form_submit_button("Salvar Checklist")
+        submit = st.form_submit_button("💾 Salvar Checklist")
 
-        if submit:
-            faltando = [i for i, resp in resultados.items() if resp is None]
-            modelos_faltando = [
-                i for i in opcoes_modelos
-                if modelos.get(i) is None or modelos[i] == [] or modelos[i] == ""
-            ]
+    if submit:
+        resultados = st.session_state.resultados
+        modelos = st.session_state.modelos
 
-            if faltando or modelos_faltando:
-                msg = ""
-                if faltando:
-                    msg += f"⚠️ Responda todas as perguntas! Faltam: {[item_keys[i] for i in faltando]}\n"
-                if modelos_faltando:
-                    msg += f"⚠️ Preencha todos os modelos! Faltam: {[item_keys[i] for i in modelos_faltando]}"
-                st.error(msg)
-            else:
-                # Formata para salvar no Supabase usando a palavra-chave
-                dados_para_salvar = {}
-                for i, resp in resultados.items():
-                    chave_item = item_keys.get(i, f"Item_{i}")
-                    dados_para_salvar[chave_item] = {
-                        "status": "Conforme" if resp == "✅" else "Não Conforme" if resp == "❌" else "N/A",
-                        "obs": modelos.get(i)
-                    }
+        faltando = [i for i, resp in resultados.items() if resp is None]
+        modelos_faltando = [
+            i for i in opcoes_modelos
+            if not modelos.get(i)
+        ]
 
+        if faltando or modelos_faltando:
+            msg = ""
+            if faltando:
+                msg += f"⚠️ Responda todas as perguntas! Faltam: {[item_keys[i] for i in faltando]}\n"
+            if modelos_faltando:
+                msg += f"⚠️ Preencha todos os modelos! Faltam: {[item_keys[i] for i in modelos_faltando]}"
+            st.error(msg)
+        else:
+            dados_para_salvar = {}
+            for i, resp in resultados.items():
+                chave_item = item_keys.get(i, f"Item_{i}")
+                dados_para_salvar[chave_item] = {
+                    "status": "Conforme" if resp == "✅" else "Não Conforme" if resp == "❌" else "N/A",
+                    "obs": modelos.get(i)
+                }
+
+            # Aqui garantimos que a função só roda uma vez
+            try:
                 salvar_checklist(numero_serie, dados_para_salvar, usuario)
                 st.success(f"Checklist do Nº de Série {numero_serie} salvo com sucesso!")
+                time.sleep(1)
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erro ao salvar: {e}")
+
 
 
 def checklist_reinspecao(numero_serie, usuario):

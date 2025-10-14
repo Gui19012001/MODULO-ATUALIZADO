@@ -320,24 +320,19 @@ def checklist_qualidade(numero_serie, usuario):
                 salvar_checklist(numero_serie, dados_para_salvar, usuario)
                 st.success(f"Checklist do Nº de Série {numero_serie} salvo com sucesso!")
 
-def checklist_reinspecao(usuario):
-    st.markdown("## 🔄 Reinspeção")
 
-    df_checks = carregar_checklists()  # Sua função de carregar os checklists
+def checklist_reinspecao(numero_serie, usuario):
+    st.markdown(f"## 🔄 Reinspeção – Nº de Série: {numero_serie}")
+
+    df_checks = carregar_checklists()
+
+    # Pega a data de hoje
     hoje = pd.Timestamp(datetime.now().date())
 
-    # Filtra apenas checklists de hoje
+    # Filtra apenas checklists do mesmo dia
     df_hoje = df_checks[pd.to_datetime(df_checks["data_hora"]).dt.date == hoje.date()]
 
-    if df_hoje.empty:
-        st.warning("Nenhum checklist foi inspecionado hoje.")
-        return False
-
-    # Lista de números de série disponíveis para reinspeção hoje
-    numeros_serie_hoje = df_hoje["numero_serie"].unique()
-    numero_serie = st.selectbox("Escolha o Nº de Série para reinspeção", numeros_serie_hoje)
-
-    # Filtra apenas o checklist original para o número de série selecionado
+    # Pega o último checklist da inspeção original (não reinspeção) do mesmo dia
     df_inspecao = df_hoje[
         (df_hoje["numero_serie"] == numero_serie) &
         (df_hoje.get("reinspecao", "Não") != "Sim")
@@ -353,7 +348,7 @@ def checklist_reinspecao(usuario):
         "Etiqueta do produto – As informações estão corretas / legíveis conforme modelo e gravação do eixo?",
         "Placa do Inmetro está correta / fixada e legível? Número corresponde à viga?",
         "Gravação do número de série da viga está legível e pintada?",
-        "Etiqueta do ABS está conforme? Com número de série compátivel ao da viga? Teste do ABS está aprovado?",
+        "Etiqueta do ABS está conforme? Com número de série compatível ao da viga? Teste do ABS está aprovado?",
         "Rodagem – tipo correto? Especifique o modelo",
         "Graxeiras estão em perfeito estado?",
         "Sistema de atuação correto? Springs ou cuícas em perfeitas condições? Especifique o modelo:",
@@ -419,7 +414,7 @@ def checklist_reinspecao(usuario):
                 ["✅", "❌", "🟡"],
                 key=f"resp_reinspecao_{numero_serie}_{i}",
                 horizontal=True,
-                index=(["✅", "❌", "🟡"].index(resp_antiga) if resp_antiga in ["✅", "❌", "🟡"] else None),
+                index=(["✅", "❌", "🟡"].index(resp_antiga) if resp_antida in ["✅", "❌", "🟡"] else 0),
                 label_visibility="collapsed"
             )
             resultados[i] = escolha
@@ -452,6 +447,7 @@ def checklist_reinspecao(usuario):
             return True
 
     return False
+
 
 
 

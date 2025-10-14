@@ -202,42 +202,13 @@ def status_emoji_para_texto(emoji):
     else:
         return "N/A"
             
-def checklist_qualidade(usuario):
-    st.markdown("## ✔️ Checklist de Qualidade")
 
-    # ================================
-    # 1. Buscar números de série dos apontamentos
-    # ================================
-    apontamentos = supabase.table("apontamentos").select("numero_serie").execute()
-    apontamentos_df = pd.DataFrame(apontamentos.data)
+# ================================
+# Checklist de Qualidade
+# ================================
+def checklist_qualidade(numero_serie, usuario): 
+    st.markdown(f"## ✔️ Checklist de Qualidade – Nº de Série: {numero_serie}")
 
-    if apontamentos_df.empty:
-        st.info("Nenhum apontamento disponível no momento.")
-        return
-
-    # ================================
-    # 2. Buscar números de série já inspecionados
-    # ================================
-    checklists = supabase.table("checklists").select("numero_serie").execute()
-    checklists_df = pd.DataFrame(checklists.data)
-
-    inspecionados = set(checklists_df["numero_serie"].unique()) if not checklists_df.empty else set()
-
-    # ================================
-    # 3. Filtrar somente pendentes
-    # ================================
-    pendentes = [s for s in apontamentos_df["numero_serie"].unique() if s not in inspecionados]
-
-    if not pendentes:
-        st.success("✅ Todos os números de série já foram inspecionados!")
-        return
-
-    # Selectbox só com pendentes
-    numero_serie = st.selectbox("Selecione o Nº de Série para inspecionar:", pendentes)
-
-    # ================================
-    # 4. Perguntas do checklist
-    # ================================
     perguntas = [
         "Etiqueta do produto – As informações estão corretas / legíveis conforme modelo e gravação do eixo?",
         "Placa do Inmetro está correta / fixada e legível? Número corresponde à viga?",
@@ -258,7 +229,7 @@ def checklist_qualidade(usuario):
         1: "ETIQUETA",
         2: "PLACA_IMETRO",
         3: "NUMERO_SERIE_VIGA",
-        4: "TESTE ABS",
+        4: "TESTE_ABS",
         5: "RODAGEM_MODELO",
         6: "GRAXEIRAS",
         7: "SISTEMA_ATUACAO",
@@ -284,9 +255,6 @@ def checklist_qualidade(usuario):
     st.write("Clique no botão correspondente a cada item:")
     st.caption("✅ = Conforme | ❌ = Não Conforme | 🟡 = N/A")
 
-    # ================================
-    # 5. Formulário
-    # ================================
     with st.form(key=f"form_checklist_{numero_serie}"):
         for i, pergunta in enumerate(perguntas, start=1):
             cols = st.columns([7, 2, 2])  # pergunta + radio + modelo
@@ -323,7 +291,7 @@ def checklist_qualidade(usuario):
             faltando = [i for i, resp in resultados.items() if resp is None]
             modelos_faltando = [
                 i for i in opcoes_modelos
-                if modelos.get(i) is None or modelos[i] == "" or modelos[i] == []
+                if modelos.get(i) is None or modelos[i] == "" 
             ]
 
             if faltando or modelos_faltando:

@@ -253,94 +253,66 @@ def checklist_qualidade(numero_serie, usuario):
 
     with st.form(key=f"form_checklist_{numero_serie}"):
         for i, pergunta in enumerate(perguntas, start=1):
-            cols = st.columns([7, 2, 2])  # pergunta + radio + modelo
-
-            # Pergunta
+            cols = st.columns([7, 2, 2])
             cols[0].markdown(f"**{i}. {pergunta}**")
 
-            # Radio de conformidade
             escolha = cols[1].radio(
                 "",
                 ["✅", "❌", "🟡"],
                 key=f"resp_{numero_serie}_{i}",
                 horizontal=True,
-                index=None,
                 label_visibility="collapsed"
             )
             resultados[i] = escolha
 
-            # Seleção de modelos
             if i in opcoes_modelos:
-                if i == 14:  # multiselect para Direito/Esquerdo
-                    modelo = cols[2].multiselect(
-                        "Lados",
-                        opcoes_modelos[i],
-                        key=f"modelo_{numero_serie}_{i}",
-                        label_visibility="collapsed"
-                    )
-                else:
-                    modelo = cols[2].selectbox(
-                        "Modelo",
-                        [""] + opcoes_modelos[i],
-                        key=f"modelo_{numero_serie}_{i}",
-                        label_visibility="collapsed"
-                    )
+                modelo = cols[2].selectbox(
+                    "Modelo",
+                    [""] + opcoes_modelos[i],
+                    key=f"modelo_{numero_serie}_{i}",
+                    label_visibility="collapsed"
+                )
                 modelos[i] = modelo
             else:
                 modelos[i] = None
 
         submit = st.form_submit_button("Salvar Checklist")
-
         if submit:
-            faltando = [i for i, resp in resultados.items() if resp is None]
-            modelos_faltando = [
-                i for i in opcoes_modelos
-                if modelos.get(i) is None or modelos[i] == [] or modelos[i] == ""
-            ]
+            # Formata dados para salvar
+            dados_para_salvar = {}
+            for i, resp in resultados.items():
+                chave_item = item_keys[i]
+                dados_para_salvar[chave_item] = {
+                    "status": "Conforme" if resp == "✅" else "Não Conforme" if resp == "❌" else "N/A",
+                    "obs": modelos.get(i)
+                }
 
-            if faltando or modelos_faltando:
-                msg = ""
-                if faltando:
-                    msg += f"⚠️ Responda todas as perguntas! Faltam: {[item_keys[i] for i in faltando]}\n"
-                if modelos_faltando:
-                    msg += f"⚠️ Preencha todos os modelos! Faltam: {[item_keys[i] for i in modelos_faltando]}"
-                st.error(msg)
-            else:
-                # Formata para salvar no Supabase usando a palavra-chave
-                dados_para_salvar = {}
-                for i, resp in resultados.items():
-                    chave_item = item_keys.get(i, f"Item_{i}")
-                    dados_para_salvar[chave_item] = {
-                        "status": "Conforme" if resp == "✅" else "Não Conforme" if resp == "❌" else "N/A",
-                        "obs": modelos.get(i)
-                    }
+            salvar_checklist(numero_serie, dados_para_salvar, usuario)
+            st.success(f"Checklist do Nº de Série {numero_serie} salvo com sucesso!")
 
-                salvar_checklist(numero_serie, dados_para_salvar, usuario)
-                st.success(f"Checklist do Nº de Série {numero_serie} salvo com sucesso!")
 
 
 def checklist_reinspecao(numero_serie, usuario):
     st.markdown(f"## 🔄 Reinspeção – Nº de Série: {numero_serie}")
 
-    df_checks = carregar_checklists()  # Função que retorna o DataFrame com todos os checklists
+    df_checks = carregar_checklists()
 
-    # Filtra apenas checklists do mesmo número de série e não reinspecionados
+    # Filtra apenas checklists do mesmo número de série e que ainda não foram reinspecionados
     df_inspecao = df_checks[
         (df_checks["numero_serie"] == numero_serie) &
-        (df_checks.get("reinspecao", "Não") != "Sim")
+        (df_checks["reinspecao"] != "Sim")
     ]
 
     if df_inspecao.empty:
-        st.warning("Nenhum checklist de inspeção encontrado para este número de série.")
+        st.warning("Nenhum checklist de inspeção encontrado para reinspeção.")
         return False
 
-    # Considera apenas os checklists do mesmo dia
-    hoje = datetime.now().date()
+    # Pega último checklist do dia
+    hoje = datetime.datetime.now(TZ).date()
     df_inspecao["data_hora"] = pd.to_datetime(df_inspecao["data_hora"])
     df_inspecao_mesmo_dia = df_inspecao[df_inspecao["data_hora"].dt.date == hoje]
-
     if df_inspecao_mesmo_dia.empty:
-        st.warning("Nenhum checklist de inspeção encontrado para este número de série hoje.")
+        st.warning("Nenhum checklist de inspeção encontrado para hoje.")
         return False
 
     checklist_original = df_inspecao_mesmo_dia.sort_values("data_hora").iloc[-1]
@@ -396,9 +368,8 @@ def checklist_reinspecao(numero_serie, usuario):
             cols = st.columns([7, 2, 2])
             chave = item_keys[i]
 
-            # Status antigo
             status_antigo = checklist_original.get(chave, {}).get("status") if isinstance(checklist_original.get(chave), dict) else checklist_original.get(chave)
-            obs_antigo = checklist_original.get(chave, {}).get("obs", "") if isinstance(checklist_original.get(chave), dict) else ""
+            obs_antigo = checklist_original.get(chave, {}).get("obs") if isinstance(checklist_original.get(chave), dict) else ""
 
             if status_antigo == "Conforme":
                 resp_antiga = "✅"
@@ -415,7 +386,7 @@ def checklist_reinspecao(numero_serie, usuario):
                 ["✅", "❌", "🟡"],
                 key=f"resp_reinspecao_{numero_serie}_{i}",
                 horizontal=True,
-                index=(["✅", "❌", "🟡"].index(resp_antiga) if resp_antida in ["✅", "❌", "🟡"] else 0),
+                index=(["✅", "❌", "🟡"].index(resp_antiga) if resp_antiga in ["✅", "❌", "🟡"] else 0),
                 label_visibility="collapsed"
             )
             resultados[i] = escolha
@@ -433,7 +404,6 @@ def checklist_reinspecao(numero_serie, usuario):
                 modelos[i] = obs_antigo
 
         submit = st.form_submit_button("Salvar Reinspeção")
-
         if submit:
             dados_para_salvar = {}
             for i, resp in resultados.items():
@@ -448,6 +418,7 @@ def checklist_reinspecao(numero_serie, usuario):
             return True
 
     return False
+
 
 # =============================
 # Histórico Produção

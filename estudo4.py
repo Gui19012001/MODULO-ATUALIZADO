@@ -201,29 +201,43 @@ def status_emoji_para_texto(emoji):
         return "Não Conforme"
     else:
         return "N/A"
-
-# ================================
-# Função utilitária para status
-# ================================
-def status_emoji_para_texto(emoji):
-    if emoji == "✅":
-        return "Conforme"
-    elif emoji == "❌":
-        return "Não Conforme"
-    else:
-        return "N/A"
             
-def checklist_qualidade(numero_serie, usuario):
-    st.markdown(f"## ✔️ Checklist de Qualidade – Nº de Série: {numero_serie}")
+def checklist_qualidade(usuario):
+    st.markdown("## ✔️ Checklist de Qualidade")
 
-    # Checa se já foi inspecionado no Supabase
-    existe = supabase.table("checklists").select("id").eq("numero_serie", numero_serie).execute()
+    # ================================
+    # 1. Buscar números de série dos apontamentos
+    # ================================
+    apontamentos = supabase.table("apontamentos").select("numero_serie").execute()
+    apontamentos_df = pd.DataFrame(apontamentos.data)
 
-    if existe.data:
-        st.warning("⚠️ Este número de série já possui checklist registrado!")
-        return  # não mostra o formulário
+    if apontamentos_df.empty:
+        st.info("Nenhum apontamento disponível no momento.")
+        return
 
-    # ... só mostra daqui pra frente se NÃO existir
+    # ================================
+    # 2. Buscar números de série já inspecionados
+    # ================================
+    checklists = supabase.table("checklists").select("numero_serie").execute()
+    checklists_df = pd.DataFrame(checklists.data)
+
+    inspecionados = set(checklists_df["numero_serie"].unique()) if not checklists_df.empty else set()
+
+    # ================================
+    # 3. Filtrar somente pendentes
+    # ================================
+    pendentes = [s for s in apontamentos_df["numero_serie"].unique() if s not in inspecionados]
+
+    if not pendentes:
+        st.success("✅ Todos os números de série já foram inspecionados!")
+        return
+
+    # Selectbox só com pendentes
+    numero_serie = st.selectbox("Selecione o Nº de Série para inspecionar:", pendentes)
+
+    # ================================
+    # 4. Perguntas do checklist
+    # ================================
     perguntas = [
         "Etiqueta do produto – As informações estão corretas / legíveis conforme modelo e gravação do eixo?",
         "Placa do Inmetro está correta / fixada e legível? Número corresponde à viga?",
@@ -256,12 +270,23 @@ def checklist_qualidade(numero_serie, usuario):
         13: "SOLDA"
     }
 
+    opcoes_modelos = {
+        5: ["Single", "Aço", "Alumínio", "N/A"],
+        7: ["Spring", "Cuíca", "N/A"],
+        8: ["ABS", "Convencional"],
+        10: ["Automático", "Manual", "N/A"],
+        13: ["Conforme", "Respingo", "Falta de cordão", "Porosidade", "Falta de Fusão"]
+    }
+
     resultados = {}
     modelos = {}
 
     st.write("Clique no botão correspondente a cada item:")
     st.caption("✅ = Conforme | ❌ = Não Conforme | 🟡 = N/A")
 
+    # ================================
+    # 5. Formulário
+    # ================================
     with st.form(key=f"form_checklist_{numero_serie}"):
         for i, pergunta in enumerate(perguntas, start=1):
             cols = st.columns([7, 2, 2])  # pergunta + radio + modelo
@@ -298,7 +323,7 @@ def checklist_qualidade(numero_serie, usuario):
             faltando = [i for i, resp in resultados.items() if resp is None]
             modelos_faltando = [
                 i for i in opcoes_modelos
-                if modelos.get(i) is None or modelos[i] == [] or modelos[i] == ""
+                if modelos.get(i) is None or modelos[i] == "" or modelos[i] == []
             ]
 
             if faltando or modelos_faltando:
@@ -309,7 +334,7 @@ def checklist_qualidade(numero_serie, usuario):
                     msg += f"⚠️ Preencha todos os modelos! Faltam: {[item_keys[i] for i in modelos_faltando]}"
                 st.error(msg)
             else:
-                # Formata para salvar no Supabase usando a palavra-chave
+                # Formata para salvar no Supabase
                 dados_para_salvar = {}
                 for i, resp in resultados.items():
                     chave_item = item_keys.get(i, f"Item_{i}")
@@ -320,6 +345,7 @@ def checklist_qualidade(numero_serie, usuario):
 
                 salvar_checklist(numero_serie, dados_para_salvar, usuario)
                 st.success(f"Checklist do Nº de Série {numero_serie} salvo com sucesso!")
+
 
 
 

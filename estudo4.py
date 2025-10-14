@@ -255,18 +255,23 @@ def checklist_qualidade(numero_serie, usuario):
 
     with st.form(key=f"form_checklist_{numero_serie}"):
         for i, pergunta in enumerate(perguntas, start=1):
-            cols = st.columns([7, 2, 2])
+            cols = st.columns([7, 2, 2])  # pergunta + radio + modelo
+
+            # Pergunta
             cols[0].markdown(f"**{i}. {pergunta}**")
 
+            # Radio de conformidade
             escolha = cols[1].radio(
                 "",
                 ["✅", "❌", "🟡"],
                 key=f"resp_{numero_serie}_{i}",
                 horizontal=True,
+                index=None,
                 label_visibility="collapsed"
             )
             resultados[i] = escolha
 
+            # Seleção de modelos
             if i in opcoes_modelos:
                 modelo = cols[2].selectbox(
                     "Modelo",
@@ -279,18 +284,33 @@ def checklist_qualidade(numero_serie, usuario):
                 modelos[i] = None
 
         submit = st.form_submit_button("Salvar Checklist")
-        if submit:
-            # Formata dados para salvar
-            dados_para_salvar = {}
-            for i, resp in resultados.items():
-                chave_item = item_keys[i]
-                dados_para_salvar[chave_item] = {
-                    "status": "Conforme" if resp == "✅" else "Não Conforme" if resp == "❌" else "N/A",
-                    "obs": modelos.get(i)
-                }
 
-            salvar_checklist(numero_serie, dados_para_salvar, usuario)
-            st.success(f"Checklist do Nº de Série {numero_serie} salvo com sucesso!")
+        if submit:
+            faltando = [i for i, resp in resultados.items() if resp is None]
+            modelos_faltando = [
+                i for i in opcoes_modelos
+                if modelos.get(i) is None or modelos[i] == [] or modelos[i] == ""
+            ]
+
+            if faltando or modelos_faltando:
+                msg = ""
+                if faltando:
+                    msg += f"⚠️ Responda todas as perguntas! Faltam: {[item_keys[i] for i in faltando]}\n"
+                if modelos_faltando:
+                    msg += f"⚠️ Preencha todos os modelos! Faltam: {[item_keys[i] for i in modelos_faltando]}"
+                st.error(msg)
+            else:
+                # Formata para salvar no Supabase usando a palavra-chave
+                dados_para_salvar = {}
+                for i, resp in resultados.items():
+                    chave_item = item_keys.get(i, f"Item_{i}")
+                    dados_para_salvar[chave_item] = {
+                        "status": "Conforme" if resp == "✅" else "Não Conforme" if resp == "❌" else "N/A",
+                        "obs": modelos.get(i)
+                    }
+
+                salvar_checklist(numero_serie, dados_para_salvar, usuario)
+                st.success(f"Checklist do Nº de Série {numero_serie} salvo com sucesso!")
 
 
 

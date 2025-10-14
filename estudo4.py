@@ -47,64 +47,58 @@ def carregar_checklists():
         df["data_hora"] = pd.to_datetime(df["data_hora"], utc=True).dt.tz_convert(TZ)
     return df
 
-
 def salvar_checklist(serie, resultados, usuario, foto_etiqueta=None, reinspecao=False):
-    # Verifica duplicidade, exceto em caso de reinspeção
-    existe = supabase.table("checklists").select("numero_serie").eq("numero_serie", serie).execute()
-    if not reinspecao and existe.data:
-        st.error("⚠️ INVÁLIDO! DUPLICIDADE – Este Nº de Série já foi inspecionado.")
-        return None
+    try:
+        # Verifica duplicidade (apenas se não for reinspeção)
+        existe = supabase.table("checklists").select("numero_serie").eq("numero_serie", serie).execute()
+        if not reinspecao and existe.data:
+            st.error("⚠️ INVÁLIDO! DUPLICIDADE – Este Nº de Série já foi inspecionado.")
+            return None
 
-    # Determina se o produto foi reprovado
-    reprovado = any(info['status'] == "Não Conforme" for info in resultados.values())
+        # Determina se o produto foi reprovado
+        reprovado = any(info['status'] == "Não Conforme" for info in resultados.values())
 
-    # Pega a hora atual em São Paulo e converte para UTC
-    data_hora_utc = datetime.datetime.now(TZ).astimezone(pytz.UTC).isoformat()
+        # Data/hora em UTC
+        data_hora_utc = datetime.datetime.now(TZ).astimezone(pytz.UTC).isoformat()
 
-    # Converte a foto para base64 se houver
-    foto_base64 = None
-    if foto_etiqueta is not None:
-        try:
-            foto_bytes = foto_etiqueta.getvalue()
-            foto_base64 = base64.b64encode(foto_bytes).decode()
-        except Exception as e:
-            st.error(f"Erro ao processar a foto: {e}")
-            foto_base64 = None
+        # Converte a foto em base64 se existir
+        foto_base64 = None
+        if foto_etiqueta is not None:
+            try:
+                foto_bytes = foto_etiqueta.getvalue()
+                foto_base64 = base64.b64encode(foto_bytes).decode()
+            except Exception as e:
+                st.warning(f"⚠️ Não foi possível processar a foto: {e}")
 
-    # Itera sobre os itens do checklist
-    for item, info in resultados.items():
-        # Monta o payload
+        # ✅ Salva um único registro com todos os resultados como JSON
         payload = {
             "numero_serie": serie,
-            "item": item,
-            "status": info.get('status', ''),
-            "observacoes": info.get('obs', ''),
             "inspetor": usuario,
             "data_hora": data_hora_utc,
+            "checklist_detalhes": resultados,  # dicionário completo (armazenado como JSON)
             "produto_reprovado": "Sim" if reprovado else "Não",
-            "reinspecao": "Sim" if reinspecao else "Não"
+            "reinspecao": "Sim" if reinspecao else "Não",
         }
 
-        # Só inclui a foto para o item "Etiqueta"
-        if item == "Etiqueta" and foto_base64:
+        if foto_base64:
             payload["foto_etiqueta"] = foto_base64
 
-        # Log de debug (opcional)
-        print("Enviando para Supabase:", payload)
+        # Envia para Supabase
+        response = supabase.table("checklists").insert(payload).execute()
 
-        # Tenta enviar para o Supabase
-        try:
-            supabase.table("checklists").insert(payload).execute()
-        except APIError as e:
-            st.error("❌ Erro ao salvar no banco de dados.")
-            st.write("Código:", e.code)
-            st.write("Mensagem:", e.message)
-            st.write("Detalhes:", e.details)
-            st.write("Dica:", e.hint)
-            raise  # relança o erro se quiser encerrar a execução
+        if hasattr(response, "data") and response.data:
+            st.success(f"✅ Checklist salvo com sucesso para o Nº de Série {serie}")
+            return True
+        else:
+            st.error("❌ Erro: resposta inesperada do banco.")
+            st.write(response)
+            return False
 
-    st.success(f"✅ Checklist salvo com sucesso para o Nº de Série {serie}")
-    return True
+    except Exception as e:
+        st.error("❌ Erro ao salvar checklist.")
+        st.write(e)
+        return False
+
 
 
 def carregar_apontamentos():

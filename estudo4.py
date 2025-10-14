@@ -213,10 +213,6 @@ def status_emoji_para_texto(emoji):
         return "Não Conforme"
     else:
         return "N/A"
-            
-import streamlit as st
-from datetime import datetime
-import time
 
 def checklist_qualidade(numero_serie, usuario): 
     st.markdown(f"## ✔️ Checklist de Qualidade – Nº de Série: {numero_serie}")

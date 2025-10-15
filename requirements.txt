@@ -3,6 +3,7 @@ pandas
 plotly
 supabase
 python-dotenv
+pytz
 opencv-python-headless
 pyzbar
 numpy

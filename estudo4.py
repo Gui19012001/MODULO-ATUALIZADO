@@ -41,7 +41,7 @@ usuarios = {"admin": "admin","Maria": "maria","Catia": "catia", "Vera": "vera", 
 # Funções do Supabase
 # =============================
 def carregar_checklists():
-    response = supabase.table("checklists").select("*").range(0, 999).execute()
+    response = supabase.table("checklists").select("*").range(0, 100000).execute()
     df = pd.DataFrame(response.data)
     
     if not df.empty and "data_hora" in df.columns:

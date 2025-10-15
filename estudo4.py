@@ -41,11 +41,14 @@ usuarios = {"admin": "admin","Maria": "maria","Catia": "catia", "Vera": "vera", 
 # Funções do Supabase
 # =============================
 def carregar_checklists():
-    response = supabase.table("checklists").select("*").limit(1000).execute()
+    response = supabase.table("checklists").select("*").range(0, 999).execute()
     df = pd.DataFrame(response.data)
-    if not df.empty:
+    
+    if not df.empty and "data_hora" in df.columns:
         df["data_hora"] = pd.to_datetime(df["data_hora"], utc=True).dt.tz_convert(TZ)
+
     return df
+
 
 def salvar_checklist(serie, resultados, usuario, foto_etiqueta=None, reinspecao=False):
     # Verifica duplicidade, exceto em caso de reinspeção

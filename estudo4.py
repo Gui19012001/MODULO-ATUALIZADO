@@ -230,10 +230,19 @@ def status_emoji_para_texto(emoji):
             
 
 # ================================
-# Checklist de Qualidade
+# Checklist de Qualidade (REVISADO)
 # ================================
-def checklist_qualidade(numero_serie, usuario): 
+def checklist_qualidade(numero_serie, usuario):
+    import time
+
     st.markdown(f"## ✔️ Checklist de Qualidade – Nº de Série: {numero_serie}")
+
+    # Controle de sessão para evitar perda de estado
+    if "checklist_bloqueado" not in st.session_state:
+        st.session_state.checklist_bloqueado = False
+
+    if "checklist_cache" not in st.session_state:
+        st.session_state.checklist_cache = {}
 
     perguntas = [
         "Etiqueta do produto – As informações estão corretas / legíveis conforme modelo e gravação do eixo?",
@@ -281,7 +290,10 @@ def checklist_qualidade(numero_serie, usuario):
     st.write("Clique no botão correspondente a cada item:")
     st.caption("✅ = Conforme | ❌ = Não Conforme | 🟡 = N/A")
 
-    with st.form(key=f"form_checklist_{numero_serie}"):
+    # ================================
+    # FORMULÁRIO CONTROLADO
+    # ================================
+    with st.form(key=f"form_checklist_{numero_serie}", clear_on_submit=False):
         for i, pergunta in enumerate(perguntas, start=1):
             cols = st.columns([7, 2, 2])  # pergunta + radio + modelo
 
@@ -299,7 +311,7 @@ def checklist_qualidade(numero_serie, usuario):
             )
             resultados[i] = escolha
 
-            # Seleção de modelos
+            # Seleção de modelos (quando necessário)
             if i in opcoes_modelos:
                 modelo = cols[2].selectbox(
                     "Modelo",
@@ -311,34 +323,61 @@ def checklist_qualidade(numero_serie, usuario):
             else:
                 modelos[i] = None
 
-        submit = st.form_submit_button("Salvar Checklist")
+        # Botão de envio (salvar)
+        submit = st.form_submit_button("💾 Salvar Checklist")
 
-        if submit:
-            faltando = [i for i, resp in resultados.items() if resp is None]
-            modelos_faltando = [
-                i for i in opcoes_modelos
-                if modelos.get(i) is None or modelos[i] == "" 
-            ]
+    # ================================
+    # LÓGICA DE SALVAMENTO
+    # ================================
+    if submit:
+        # Evita salvar múltiplas vezes em caso de atualização
+        if st.session_state.checklist_bloqueado:
+            st.warning("⏳ Salvamento em andamento... aguarde.")
+            return
 
-            if faltando or modelos_faltando:
-                msg = ""
-                if faltando:
-                    msg += f"⚠️ Responda todas as perguntas! Faltam: {[item_keys[i] for i in faltando]}\n"
-                if modelos_faltando:
-                    msg += f"⚠️ Preencha todos os modelos! Faltam: {[item_keys[i] for i in modelos_faltando]}"
-                st.error(msg)
-            else:
-                # Formata para salvar no Supabase
-                dados_para_salvar = {}
-                for i, resp in resultados.items():
-                    chave_item = item_keys.get(i, f"Item_{i}")
-                    dados_para_salvar[chave_item] = {
-                        "status": "Conforme" if resp == "✅" else "Não Conforme" if resp == "❌" else "N/A",
-                        "obs": modelos.get(i)
-                    }
+        st.session_state.checklist_bloqueado = True
 
-                salvar_checklist(numero_serie, dados_para_salvar, usuario)
-                st.success(f"Checklist do Nº de Série {numero_serie} salvo com sucesso!")
+        # Validação de campos obrigatórios
+        faltando = [i for i, resp in resultados.items() if resp is None]
+        modelos_faltando = [
+            i for i in opcoes_modelos
+            if modelos.get(i) is None or modelos[i] == ""
+        ]
+
+        if faltando or modelos_faltando:
+            msg = ""
+            if faltando:
+                msg += f"⚠️ Responda todas as perguntas! Faltam: {[item_keys[i] for i in faltando]}\n"
+            if modelos_faltando:
+                msg += f"⚠️ Preencha todos os modelos! Faltam: {[item_keys[i] for i in modelos_faltando]}"
+            st.error(msg)
+            st.session_state.checklist_bloqueado = False
+            return
+
+        # Formata dados para salvar no Supabase
+        dados_para_salvar = {}
+        for i, resp in resultados.items():
+            chave_item = item_keys.get(i, f"Item_{i}")
+            dados_para_salvar[chave_item] = {
+                "status": status_emoji_para_texto(resp),
+                "obs": modelos.get(i)
+            }
+
+        try:
+            salvar_checklist(numero_serie, dados_para_salvar, usuario)
+            st.success(f"✅ Checklist do Nº de Série {numero_serie} salvo com sucesso!")
+
+            # Cache local (mantém preenchimento)
+            st.session_state.checklist_cache[numero_serie] = dados_para_salvar
+
+            # Pequeno delay para garantir gravação
+            time.sleep(0.5)
+
+        except Exception as e:
+            st.error(f"❌ Erro ao salvar checklist: {e}")
+        finally:
+            st.session_state.checklist_bloqueado = False
+
 
 
 

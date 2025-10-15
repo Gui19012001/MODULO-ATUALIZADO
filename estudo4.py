@@ -250,10 +250,8 @@ def checklist_qualidade(numero_serie, usuario):
         "Gravação do número de série da viga está legível e pintada?",
         "Etiqueta do ABS está conforme? Com número de série compátivel ao da viga? Teste do ABS está aprovado?",
         "Rodagem – tipo correto? Especifique o modelo",
-        "Graxeiras estão em perfeito estado?",
+        "Graxeiras e Anéis elásticos estão em perfeito estado?",
         "Sistema de atuação correto? Springs ou cuícas em perfeitas condições? Especifique o modelo:",
-        "Modelo do freio correto? Especifique modelo",
-        "Anéis elásticos devidamente encaixados no orifício?",
         "Catraca do freio correta? Especifique modelo",
         "Tampa do cubo correta, livre de avarias e pintura nos critérios? As tampas dos cubos dos ambos os lados são iguais?",
         "Pintura do eixo livre de oxidação,isento de escorrimento na pintura, pontos sem tinta e camada conforme padrão?",
@@ -266,22 +264,19 @@ def checklist_qualidade(numero_serie, usuario):
         3: "NUMERO_SERIE_VIGA",
         4: "TESTE_ABS",
         5: "RODAGEM_MODELO",
-        6: "GRAXEIRAS",
+        6: "GRAXEIRAS E ANÉIS ELÁSTICOS",
         7: "SISTEMA_ATUACAO",
-        8: "MODELO_FREIO",
-        9: "ANEIS_ELASTICOS",
-        10: "CATRACA_FREIO",
-        11: "TAMPA_CUBO",
-        12: "PINTURA_EIXO",
-        13: "SOLDA"
+        8: "CATRACA_FREIO",
+        9: "TAMPA_CUBO",
+        10: "PINTURA_EIXO",
+        11: "SOLDA"
     }
 
     opcoes_modelos = {
         5: ["Single", "Aço", "Alumínio", "N/A"],
         7: ["Spring", "Cuíca", "N/A"],
-        8: ["ABS", "Convencional"],
-        10: ["Automático", "Manual", "N/A"],
-        13: ["Conforme", "Respingo", "Falta de cordão", "Porosidade", "Falta de Fusão"]
+        8: ["Automático", "Manual", "N/A"],
+        11: ["Conforme", "Respingo", "Falta de cordão", "Porosidade", "Falta de Fusão"]
     }
 
     resultados = {}

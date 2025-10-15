@@ -41,13 +41,26 @@ usuarios = {"admin": "admin","Maria": "maria","Catia": "catia", "Vera": "vera", 
 # Funções do Supabase
 # =============================
 def carregar_checklists():
-    response = supabase.table("checklists").select("*").range(0, 100000).execute()
-    df = pd.DataFrame(response.data)
+    """Carrega todos os checklists do Supabase, sem limite de 1000 linhas."""
+    data_total = []
+    inicio = 0
+    passo = 1000
+
+    while True:
+        response = supabase.table("checklists").select("*").range(inicio, inicio + passo - 1).execute()
+        dados = response.data
+        if not dados:
+            break
+        data_total.extend(dados)
+        inicio += passo
+
+    df = pd.DataFrame(data_total)
     
     if not df.empty and "data_hora" in df.columns:
         df["data_hora"] = pd.to_datetime(df["data_hora"], utc=True).dt.tz_convert(TZ)
 
     return df
+
 
 
 def salvar_checklist(serie, resultados, usuario, foto_etiqueta=None, reinspecao=False):

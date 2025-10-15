@@ -516,7 +516,7 @@ def pagina_apontamento():
 
     # Filtra apenas do dia atual e pelo tipo de produção
     df_filtrado = df_apont[
-        (df_apont["tipo_producao"].str.contains(tipo_producao, case=False, na=False)) &
+        (df_apont["tipo_producao"].str.contains(tipo_producao, case=False, na=False)) & 
         (df_apont["data_hora"].dt.date == datetime.datetime.now(TZ).date())
     ] if not df_apont.empty else pd.DataFrame()
 
@@ -561,13 +561,35 @@ def pagina_apontamento():
     # ================= Input de leitura =================
     def processar_codigo():
         codigo = st.session_state["codigo_barras"].strip()
-        if codigo:
-            sucesso = salvar_apontamento(codigo, tipo_producao)
-            if sucesso:
-                st.success(f"Código {codigo} registrado com sucesso!")
-            else:
-                st.warning(f"Código {codigo} já registrado hoje ou erro.")
+
+        # Validação: apenas 9 dígitos numéricos
+        if not codigo.isdigit() or len(codigo) != 9:
+            st.error("⚠️ O código deve conter exatamente 9 dígitos numéricos.")
             st.session_state["codigo_barras"] = ""
+            return
+
+        # Verifica duplicidade no mesmo dia
+        df_apont = carregar_apontamentos()
+        hoje = datetime.datetime.now(TZ).date()
+
+        if not df_apont.empty:
+            ja_apontado = df_apont[
+                (df_apont["numero_serie"] == codigo) &
+                (df_apont["data_hora"].dt.date == hoje)
+            ]
+            if not ja_apontado.empty:
+                st.warning(f"⚠️ O código {codigo} já foi registrado hoje.")
+                st.session_state["codigo_barras"] = ""
+                return
+
+        # Se passou nas validações, salva
+        sucesso = salvar_apontamento(codigo, tipo_producao)
+        if sucesso:
+            st.success(f"Código {codigo} registrado com sucesso!")
+        else:
+            st.warning(f"Erro ao registrar o código {codigo}.")
+
+        st.session_state["codigo_barras"] = ""
 
     st.text_input(
         "Leia o Código de Barras:",
@@ -576,7 +598,7 @@ def pagina_apontamento():
         placeholder="Aproxime o leitor"
     )
 
-    # Mantém input sempre em foco
+    # Mantém input sempre em foco (ótimo para leitor de código de barras)
     components.html(
         """
         <script>

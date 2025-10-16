@@ -230,39 +230,39 @@ def status_emoji_para_texto(emoji):
             
 
 # ================================
-# Checklist de Qualidade (REVISADO)
+# Checklist de Qualidade (REVISADO - Dinâmico)
 # ================================
 def checklist_qualidade(numero_serie, usuario):
     import time
+    import streamlit as st
 
     st.markdown(f"## ✔️ Checklist de Qualidade – Nº de Série: {numero_serie}")
 
     # Controle de sessão para evitar perda de estado
     if "checklist_bloqueado" not in st.session_state:
         st.session_state.checklist_bloqueado = False
-
     if "checklist_cache" not in st.session_state:
         st.session_state.checklist_cache = {}
 
     perguntas = [
         "Etiqueta do produto – As informações estão corretas / legíveis conforme modelo e gravação do eixo?",
-        "Placa do Inmetro está correta / fixada e legível? Número corresponde à viga?Gravação do número de série da viga está legível e pintada?",
-        "Etiqueta do ABS está conforme? Com número de série compátivel ao da viga? Teste do ABS está aprovado?",
+        "Placa do Inmetro está correta / fixada e legível? Número corresponde à viga? Gravação do número de série da viga está legível e pintada?",
+        "Etiqueta do ABS está conforme? Com número de série compatível ao da viga? Teste do ABS está aprovado?",
         "Rodagem – tipo correto? Especifique o modelo",
         "Graxeiras e Anéis elásticos estão em perfeito estado?",
         "Sistema de atuação correto? Springs ou cuícas em perfeitas condições? Especifique o modelo:",
         "Catraca do freio correta? Especifique modelo",
         "Tampa do cubo correta, livre de avarias e pintura nos critérios? As tampas dos cubos dos ambos os lados são iguais?",
-        "Pintura do eixo livre de oxidação,isento de escorrimento na pintura, pontos sem tinta e camada conforme padrão?",
+        "Pintura do eixo livre de oxidação, isento de escorrimento na pintura, pontos sem tinta e camada conforme padrão?",
         "Os cordões de solda do eixo estão conformes?"
     ]
 
     item_keys = {
         1: "ETIQUETA",
-        2: "PLACA_IMETRO E NÚMERO DE SÉRIE",
+        2: "PLACA_IMETRO_E_NUMERO_DE_SERIE",
         3: "TESTE_ABS",
         4: "RODAGEM_MODELO",
-        5: "GRAXEIRAS E ANÉIS ELÁSTICOS",
+        5: "GRAXEIRAS_E_ANÉIS_ELÁSTICOS",
         6: "SISTEMA_ATUACAO",
         7: "CATRACA_FREIO",
         8: "TAMPA_CUBO",
@@ -284,57 +284,67 @@ def checklist_qualidade(numero_serie, usuario):
     st.caption("✅ = Conforme | ❌ = Não Conforme | 🟡 = N/A")
 
     # ================================
-    # FORMULÁRIO CONTROLADO
+    # FORMULÁRIO DINÂMICO
     # ================================
-    with st.form(key=f"form_checklist_{numero_serie}", clear_on_submit=False):
-        for i, pergunta in enumerate(perguntas, start=1):
-            cols = st.columns([7, 2, 2])  # pergunta + radio + modelo
+    for i, pergunta in enumerate(perguntas, start=1):
+        cols = st.columns([7, 2, 2])  # pergunta + radio + modelo
 
-            # Pergunta
-            cols[0].markdown(f"**{i}. {pergunta}**")
+        # Pergunta
+        cols[0].markdown(f"**{i}. {pergunta}**")
 
-            # Radio de conformidade
-            escolha = cols[1].radio(
-                "",
-                ["✅", "❌", "🟡"],
-                key=f"resp_{numero_serie}_{i}",
-                horizontal=True,
-                index=None,
-                label_visibility="collapsed"
-            )
-            resultados[i] = escolha
+        # Radio de conformidade
+        escolha = cols[1].radio(
+            "",
+            ["✅", "❌", "🟡"],
+            key=f"resp_{numero_serie}_{i}",
+            horizontal=True,
+            label_visibility="collapsed"
+        )
+        resultados[i] = escolha
 
-            # Seleção de modelos (quando necessário)
-            if i in opcoes_modelos:
-                modelo = cols[2].selectbox(
-                    "Modelo",
-                    [""] + opcoes_modelos[i],
-                    key=f"modelo_{numero_serie}_{i}",
-                    label_visibility="collapsed"
-                )
-                modelos[i] = modelo
+        # Selectbox dinâmico
+        if i in opcoes_modelos:
+            if i == 10:
+                # Item 10: só aparece se for ❌
+                if escolha == "❌":
+                    modelo = cols[2].selectbox(
+                        "Modelo",
+                        [""] + opcoes_modelos[i],
+                        key=f"modelo_{numero_serie}_{i}",
+                        label_visibility="collapsed"
+                    )
+                    modelos[i] = modelo
+                else:
+                    modelos[i] = None
             else:
-                modelos[i] = None
+                # Outros itens: aparece se for ✅ ou ❌
+                if escolha in ["✅", "❌"]:
+                    modelo = cols[2].selectbox(
+                        "Modelo",
+                        [""] + opcoes_modelos[i],
+                        key=f"modelo_{numero_serie}_{i}",
+                        label_visibility="collapsed"
+                    )
+                    modelos[i] = modelo
+                else:
+                    modelos[i] = None
+        else:
+            modelos[i] = None
 
-        # Botão de envio (salvar)
-        submit = st.form_submit_button("💾 Salvar Checklist")
-
-    # ================================
-    # LÓGICA DE SALVAMENTO
-    # ================================
-    if submit:
-        # Evita salvar múltiplas vezes em caso de atualização
+    # Botão de envio (salvar)
+    if st.button("💾 Salvar Checklist"):
+        # Bloqueio de salvamento múltiplo
         if st.session_state.checklist_bloqueado:
             st.warning("⏳ Salvamento em andamento... aguarde.")
             return
-
         st.session_state.checklist_bloqueado = True
 
         # Validação de campos obrigatórios
         faltando = [i for i, resp in resultados.items() if resp is None]
         modelos_faltando = [
             i for i in opcoes_modelos
-            if modelos.get(i) is None or modelos[i] == ""
+            if (i == 10 and resultados.get(i) == "❌" and (modelos.get(i) is None or modelos[i] == "")) or
+               (i != 10 and resultados.get(i) in ["✅", "❌"] and (modelos.get(i) is None or modelos[i] == ""))
         ]
 
         if faltando or modelos_faltando:
@@ -352,7 +362,7 @@ def checklist_qualidade(numero_serie, usuario):
         for i, resp in resultados.items():
             chave_item = item_keys.get(i, f"Item_{i}")
             dados_para_salvar[chave_item] = {
-                "status": status_emoji_para_texto(resp),
+                "status": status_emoji_para_texto(resp),  # Função que converte emoji para texto
                 "obs": modelos.get(i)
             }
 
@@ -363,13 +373,12 @@ def checklist_qualidade(numero_serie, usuario):
             # Cache local (mantém preenchimento)
             st.session_state.checklist_cache[numero_serie] = dados_para_salvar
 
-            # Pequeno delay para garantir gravação
             time.sleep(0.5)
-
         except Exception as e:
             st.error(f"❌ Erro ao salvar checklist: {e}")
         finally:
             st.session_state.checklist_bloqueado = False
+
 
 
 

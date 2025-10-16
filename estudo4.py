@@ -404,8 +404,7 @@ def checklist_reinspecao(numero_serie, usuario):
 
     perguntas = [
         "Etiqueta do produto – As informações estão corretas / legíveis conforme modelo e gravação do eixo?",
-        "Placa do Inmetro está correta / fixada e legível? Número corresponde à viga?",
-        "Gravação do número de série da viga está legível e pintada?",
+        "Placa do Inmetro está correta / fixada e legível? Número corresponde à viga?Gravação do número de série da viga está legível e pintada?",
         "Etiqueta do ABS está conforme? Com número de série compátivel ao da viga? Teste do ABS está aprovado?",
         "Rodagem – tipo correto? Especifique o modelo",
         "Graxeiras e Anéis elásticos estão em perfeito estado?",
@@ -418,23 +417,22 @@ def checklist_reinspecao(numero_serie, usuario):
 
     item_keys = {
         1: "ETIQUETA",
-        2: "PLACA_IMETRO",
-        3: "NUMERO_SERIE_VIGA",
-        4: "TESTE_ABS",
-        5: "RODAGEM_MODELO",
-        6: "GRAXEIRAS E ANÉIS ELÁSTICOS",
-        7: "SISTEMA_ATUACAO",
-        8: "CATRACA_FREIO",
-        9: "TAMPA_CUBO",
-        10: "PINTURA_EIXO",
-        11: "SOLDA"
+        2: "PLACA_IMETRO E NÚMERO DE SÉRIE",
+        3: "TESTE_ABS",
+        4: "RODAGEM_MODELO",
+        5: "GRAXEIRAS E ANÉIS ELÁSTICOS",
+        6: "SISTEMA_ATUACAO",
+        7: "CATRACA_FREIO",
+        8: "TAMPA_CUBO",
+        9: "PINTURA_EIXO",
+        10: "SOLDA"
     }
 
     opcoes_modelos = {
-        5: ["Single", "Aço", "Alumínio", "N/A"],
-        7: ["Spring", "Cuíca", "N/A"],
-        8: ["Automático", "Manual", "N/A"],
-        11: ["Conforme", "Respingo", "Falta de cordão", "Porosidade", "Falta de Fusão"]
+        4: ["Single", "Aço", "Alumínio", "N/A"],
+        6: ["Spring", "Cuíca", "N/A"],
+        7: ["Automático", "Manual", "N/A"],
+        10: ["Conforme", "Respingo", "Falta de cordão", "Porosidade", "Falta de Fusão"]
     }
 
     resultados = {}

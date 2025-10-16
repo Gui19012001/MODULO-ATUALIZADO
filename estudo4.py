@@ -678,7 +678,7 @@ def pagina_apontamento():
 
 def painel_dashboard():
     if AUTORELOAD_AVAILABLE:
-        st_autorefresh(interval=60 * 5000, key="dashboard_refresh")
+        st_autorefresh(interval=60 * 10000, key="dashboard_refresh")
     else:
         st.warning(
             "Componente 'streamlit-autorefresh' não encontrado. "

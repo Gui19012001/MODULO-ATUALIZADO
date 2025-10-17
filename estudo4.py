@@ -977,6 +977,37 @@ def dashboard_qualidade():
     else:
         st.info("Nenhuma não conformidade registrada.")
 
+def buscar_relatorio_por_data(data_str):
+    response = supabase.rpc('relatorio_op_por_data', {'data_input': data_str}).execute()
+    if response.data:
+        return response.data
+    else:
+        st.error("Nenhum dado retornado ou erro na consulta.")
+        return []
+
+
+def pagina_relatorio_op():
+    st.title("📊 Relatório OP por Data")
+
+    data_consulta = st.date_input("Escolha a data", value=pd.to_datetime("today"))
+
+    if data_consulta:
+        relatorio = buscar_relatorio_por_data(str(data_consulta))
+        if relatorio:
+            df = pd.DataFrame(relatorio)
+            df['op'] = df['op'].astype(str)
+            df = df.drop(columns=['total_quantidade'])
+            df.rename(columns={
+                "op": "Ordem de Produção",
+                "quantidade": "Quantidade"
+            }, inplace=True)
+            st.dataframe(df, use_container_width=True)
+            total = df['Quantidade'].sum()
+            st.markdown(f"**Total geral de quantidades:** {total}")
+        else:
+            st.info("Nenhum dado para essa data.")
+    else:
+        st.info("Por favor, escolha uma data para exibir o relatório.")
 
 
 
@@ -994,7 +1025,8 @@ def app():
         "Reinspeção",
         "Histórico de Produção",
         "Histórico de Inspeção",
-        "Dashboard de Qualidade"
+        "Dashboard de Qualidade",
+        "Relatório OP por Data"
     ])
 
     if menu == "Dashboard Produção":
@@ -1069,6 +1101,10 @@ def app():
     elif menu == "Dashboard de Qualidade":
         dashboard_qualidade()
 
+    elif menu == "Relatório OP por Data":
+        pagina_relatorio_op()
+
+
     # Rodapé sempre no final
     st.markdown(
         "<p style='text-align:center;color:gray;font-size:12px;margin-top:30px;'>Created by Engenharia de Produção</p>",
@@ -1078,6 +1114,10 @@ def app():
 
 if __name__ == "__main__":
     app()
+
+
+
+
 
 
 

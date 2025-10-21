@@ -122,7 +122,7 @@ def salvar_checklist(serie, resultados, usuario, foto_etiqueta=None, reinspecao=
     return True
 
 def carregar_apontamentos():
-    """Carrega todos os apontamentos do Supabase, sem limite de 1000 linhas."""
+    """Carrega todos os apontamentos do Supabase, sem limite de 1000 linhas, com tratamento de datas."""
     data_total = []
     inicio = 0
     passo = 1000
@@ -136,11 +136,16 @@ def carregar_apontamentos():
         inicio += passo
 
     df = pd.DataFrame(data_total)
-    
+
     if not df.empty and "data_hora" in df.columns:
-        df["data_hora"] = pd.to_datetime(df["data_hora"], utc=True).dt.tz_convert(TZ)
+        # Converte com segurança
+        df["data_hora"] = pd.to_datetime(df["data_hora"], errors="coerce", utc=True)
+        df["data_hora"] = df["data_hora"].dt.tz_convert(TZ)
+        # Remove registros com datas inválidas (NaT)
+        df = df.dropna(subset=["data_hora"])
 
     return df
+
 
 
 

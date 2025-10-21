@@ -122,11 +122,27 @@ def salvar_checklist(serie, resultados, usuario, foto_etiqueta=None, reinspecao=
     return True
 
 def carregar_apontamentos():
-    response = supabase.table("apontamentos").select("*").limit(2000).execute()
-    df = pd.DataFrame(response.data)
+    """Carrega todos os apontamentos do Supabase sem limite, mantendo a conversão de data com ISO8601."""
+    data_total = []
+    inicio = 0
+    passo = 1000
+
+    while True:
+        response = supabase.table("apontamentos").select("*").range(inicio, inicio + passo - 1).execute()
+        dados = response.data
+        if not dados:
+            break
+        data_total.extend(dados)
+        inicio += passo
+
+    df = pd.DataFrame(data_total)
+
     if not df.empty:
+        # Mesma conversão de data do código original
         df["data_hora"] = pd.to_datetime(df["data_hora"], utc=True, format="ISO8601").dt.tz_convert(TZ)
+
     return df
+
 
 
 

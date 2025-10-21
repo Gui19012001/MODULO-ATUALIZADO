@@ -122,7 +122,7 @@ def salvar_checklist(serie, resultados, usuario, foto_etiqueta=None, reinspecao=
     return True
 
 def carregar_apontamentos():
-    response = supabase.table("apontamentos").select("*").limit(1000).execute()
+    response = supabase.table("apontamentos").select("*").limit(2000).execute()
     df = pd.DataFrame(response.data)
     if not df.empty:
         df["data_hora"] = pd.to_datetime(df["data_hora"], utc=True, format="ISO8601").dt.tz_convert(TZ)

@@ -122,11 +122,26 @@ def salvar_checklist(serie, resultados, usuario, foto_etiqueta=None, reinspecao=
     return True
 
 def carregar_apontamentos():
-    response = supabase.table("apontamentos").select("*").limit(1000).execute()
-    df = pd.DataFrame(response.data)
-    if not df.empty:
-        df["data_hora"] = pd.to_datetime(df["data_hora"], utc=True, format="ISO8601").dt.tz_convert(TZ)
+    """Carrega todos os apontamentos do Supabase, sem limite de 1000 linhas."""
+    data_total = []
+    inicio = 0
+    passo = 1000
+
+    while True:
+        response = supabase.table("apontamentos").select("*").range(inicio, inicio + passo - 1).execute()
+        dados = response.data
+        if not dados:
+            break
+        data_total.extend(dados)
+        inicio += passo
+
+    df = pd.DataFrame(data_total)
+    
+    if not df.empty and "data_hora" in df.columns:
+        df["data_hora"] = pd.to_datetime(df["data_hora"], utc=True).dt.tz_convert(TZ)
+
     return df
+
 
 
 

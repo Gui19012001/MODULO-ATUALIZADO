@@ -741,12 +741,17 @@ def painel_dashboard():
     meta_acumulada = 0
     hora_atual = datetime.datetime.now(TZ)
 
-    # só soma meta de horas que já passaram COMPLETAMENTE
+    # Soma a meta de todas as horas que já começaram
     for h, m in meta_hora.items():
-        horario_fechado = TZ.localize(datetime.datetime.combine(hoje, h)) + datetime.timedelta(hours=1)
-        if hora_atual >= horario_fechado:
+        horario_inicio = datetime.datetime.combine(hoje, h)
+        # Garante que está no mesmo fuso
+        if horario_inicio.tzinfo is None:
+            horario_inicio = TZ.localize(horario_inicio)
+
+        if hora_atual >= horario_inicio:
             meta_acumulada += m
 
+    # Cálculo do atraso — diferença entre meta acumulada e o total produzido
     atraso = meta_acumulada - total_lidos if total_lidos < meta_acumulada else 0
 
     # ================= % de aprovação =================

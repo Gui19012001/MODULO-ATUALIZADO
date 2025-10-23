@@ -1031,9 +1031,9 @@ def pagina_relatorio_op():
 
 
 
-# =============================
-# App principal
-# =============================
+# ==============================
+# APP PRINCIPAL
+# ==============================
 def app():
     st.set_page_config(page_title="Controle de Qualidade", layout="wide")
     login()
@@ -1067,20 +1067,26 @@ def app():
                 (df_apont["data_hora"] >= start_of_day) & 
                 (df_apont["data_hora"] <= end_of_day)
             ]
-            codigos_hoje = df_hoje["numero_serie"].unique()
+
+            # Ordenar do mais antigo para o mais recente (últimos no final)
+            df_hoje = df_hoje.sort_values(by="data_hora", ascending=True)
+
+            # Pegar os códigos únicos mantendo a ordem
+            codigos_hoje = df_hoje.drop_duplicates(subset="numero_serie")["numero_serie"].tolist()
         else:
             codigos_hoje = []
 
         df_checks = carregar_checklists()
         codigos_com_checklist = df_checks["numero_serie"].unique() if not df_checks.empty else []
 
+        # Filtra apenas os disponíveis (sem checklist ainda)
         codigos_disponiveis = [c for c in codigos_hoje if c not in codigos_com_checklist]
 
         if codigos_disponiveis:
             numero_serie = st.selectbox(
                 "Selecione o Nº de Série para Inspeção",
                 codigos_disponiveis,
-                index=0
+                index=len(codigos_disponiveis) - 1  # Último como selecionado
             )
             usuario = st.session_state['usuario']
             checklist_qualidade(numero_serie, usuario)
@@ -1124,21 +1130,14 @@ def app():
     elif menu == "Relatório OP por Data":
         pagina_relatorio_op()
 
-
-    # Rodapé sempre no final
+    # Rodapé
     st.markdown(
         "<p style='text-align:center;color:gray;font-size:12px;margin-top:30px;'>Created by Engenharia de Produção</p>",
         unsafe_allow_html=True
     )
 
-
+# ==============================
+# EXECUÇÃO
+# ==============================
 if __name__ == "__main__":
     app()
-
-
-
-
-
-
-
-

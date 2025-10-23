@@ -1083,10 +1083,11 @@ def app():
         codigos_disponiveis = [c for c in codigos_hoje if c not in codigos_com_checklist]
 
         if codigos_disponiveis:
+            # ✅ Sempre inicia selecionado no primeiro item
             numero_serie = st.selectbox(
                 "Selecione o Nº de Série para Inspeção",
                 codigos_disponiveis,
-                index=len(codigos_disponiveis) - 1  # Último como selecionado
+                index=0
             )
             usuario = st.session_state['usuario']
             checklist_qualidade(numero_serie, usuario)

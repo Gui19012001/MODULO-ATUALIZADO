@@ -149,9 +149,9 @@ def carregar_apontamentos():
 
 
 def salvar_apontamento(serie, tipo_producao=None):
-    # Usa UTC sempre para evitar problemas de fuso
-    TZ = pytz.timezone("America/Sao_Paulo")
-    agora_utc = datetime.datetime.now(TZ).astimezone(datetime.timezone.utc)
+        # Usa UTC sempre para evitar problemas de fuso
+    agora_utc = datetime.datetime.now(datetime.timezone.utc)
+    hoje_utc = agora_utc.date()
 
     # Define o início e fim do dia (em UTC)
     inicio_utc = datetime.datetime.combine(hoje_utc, datetime.time.min).replace(tzinfo=datetime.timezone.utc)

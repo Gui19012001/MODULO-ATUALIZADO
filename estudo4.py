@@ -514,54 +514,6 @@ def checklist_reinspecao(numero_serie, usuario):
 
     return False
 
-
-# =============================
-# Histórico Produção
-# =============================
-def mostrar_historico_producao():
-    st.markdown("## 📚 Histórico de Produção")
-    df_apont = carregar_apontamentos()
-    if df_apont.empty:
-        st.info("Nenhum apontamento registrado até agora.")
-        return
-
-    # Filtro de data
-    data_inicio = st.date_input("Data Inicial", value=df_apont["data_hora"].min().date())
-    data_fim = st.date_input("Data Final", value=df_apont["data_hora"].max().date())
-
-    df_filtrado = df_apont[
-        (df_apont["data_hora"].dt.date >= data_inicio) &
-        (df_apont["data_hora"].dt.date <= data_fim)
-    ].sort_values("data_hora", ascending=False)
-
-    st.dataframe(df_filtrado[["numero_serie", "data_hora","tipo_producao"]], use_container_width=True)
-
-# =============================
-# Histórico Qualidade
-# =============================
-def mostrar_historico_qualidade():
-    st.markdown("## 📚 Histórico de Inspeção de Qualidade")
-    df_checks = carregar_checklists()
-    if df_checks.empty:
-        st.info("Nenhum checklist registrado até agora.")
-        return
-
-    data_inicio = st.date_input("Data Inicial", value=df_checks["data_hora"].min().date())
-    data_fim = st.date_input("Data Final", value=df_checks["data_hora"].max().date())
-
-    df_filtrado = df_checks[
-        (df_checks["data_hora"].dt.date >= data_inicio) &
-        (df_checks["data_hora"].dt.date <= data_fim)
-    ].sort_values("data_hora", ascending=False)
-
-    st.dataframe(
-        df_filtrado[[
-            "numero_serie", "item", "status", "observacoes",
-            "inspetor", "produto_reprovado", "reinspecao", "data_hora"
-        ]],
-        use_container_width=True
-    )
-
 # ================================
 # Página de Apontamento (apenas leitor de código de barras)
 # ================================
@@ -1045,8 +997,6 @@ def app():
         "Apontamento",
         "Inspeção de Qualidade",
         "Reinspeção",
-        "Histórico de Produção",
-        "Histórico de Inspeção",
         "Dashboard de Qualidade",
         "Relatório OP por Data"
     ])
@@ -1120,12 +1070,6 @@ def app():
                     index=0
                 )
                 checklist_qualidade(numero_serie, usuario)
-
-    elif menu == "Histórico de Produção":
-        mostrar_historico_producao()
-
-    elif menu == "Histórico de Inspeção":
-        mostrar_historico_qualidade()
 
     elif menu == "Dashboard de Qualidade":
         dashboard_qualidade()

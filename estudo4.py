@@ -562,7 +562,7 @@ def pagina_apontamento():
     # ================= Tipo de produção =================
     tipo_producao = st.radio(
         "Tipo de produção:",
-        ["Esteira", "Rodagem"],
+        ["Eixo", "Manga", "PNM"],
         horizontal=True,
         key="tipo_producao_apontamento"
     )
@@ -993,18 +993,13 @@ def app():
     login()
 
     menu = st.sidebar.selectbox("Menu", [
-        "Dashboard Produção",
         "Apontamento",
         "Inspeção de Qualidade",
-        "Reinspeção",
-        "Dashboard de Qualidade",
-        "Relatório OP por Data"
+        "Reinspeção"
     ])
 
-    if menu == "Dashboard Produção":
-        painel_dashboard()
 
-    elif menu == "Apontamento":
+    if menu == "Apontamento":
         pagina_apontamento()
 
     elif menu == "Inspeção de Qualidade":
@@ -1070,12 +1065,6 @@ def app():
                     index=0
                 )
                 checklist_qualidade(numero_serie, usuario)
-
-    elif menu == "Dashboard de Qualidade":
-        dashboard_qualidade()
-
-    elif menu == "Relatório OP por Data":
-        pagina_relatorio_op()
 
     # Rodapé
     st.markdown(

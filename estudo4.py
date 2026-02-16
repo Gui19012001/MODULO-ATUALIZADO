@@ -650,7 +650,82 @@ def pagina_apontamento():
     else:
         st.info("Nenhum apontamento encontrado.")
 
+# ==============================
+# APP PRINCIPAL
+# ==============================
+def app():
+    st.set_page_config(page_title="Controle de Qualidade", layout="wide")
+    login()
 
+    menu = st.sidebar.selectbox("Menu", [
+        "Apontamento",
+        "Inspeção de Qualidade",
+        "Reinspeção"
+    ])
+
+    if menu == "Apontamento":
+        pagina_apontamento()
+
+    elif menu == "Inspeção de Qualidade":
+        df_apont = carregar_apontamentos()
+        hoje = datetime.datetime.now(TZ).date()
+
+        if not df_apont.empty:
+            start_of_day = TZ.localize(datetime.datetime.combine(hoje, datetime.time.min))
+            end_of_day = TZ.localize(datetime.datetime.combine(hoje, datetime.time.max))
+            df_hoje = df_apont[
+                (df_apont["data_hora"] >= start_of_day) &
+                (df_apont["data_hora"] <= end_of_day)
+            ]
+
+            df_hoje = df_hoje.sort_values(by="data_hora", ascending=True)
+            codigos_hoje = df_hoje.drop_duplicates(subset="numero_serie")["numero_serie"].tolist()
+        else:
+            codigos_hoje = []
+
+        df_checks = carregar_checklists()
+        codigos_com_checklist = df_checks["numero_serie"].unique() if not df_checks.empty else []
+        codigos_disponiveis = [c for c in codigos_hoje if c not in codigos_com_checklist]
+
+        if codigos_disponiveis:
+            numero_serie = st.selectbox(
+                "Selecione o Nº de Série para Inspeção",
+                codigos_disponiveis,
+                index=0
+            )
+            usuario = st.session_state['usuario']
+            checklist_qualidade(numero_serie, usuario)
+        else:
+            st.info("Nenhum código disponível para inspeção hoje.")
+
+    elif menu == "Reinspeção":
+        usuario = st.session_state['usuario']
+        df_checks = carregar_checklists()
+
+        if df_checks.empty:
+            st.info("Nenhum checklist registrado ainda.")
+        else:
+            df_reprovados = df_checks[
+                (df_checks["produto_reprovado"] == "Sim") &
+                (df_checks["reinspecao"] != "Sim")
+            ]
+
+            numeros_serie_reinspecao = df_reprovados["numero_serie"].unique() if not df_reprovados.empty else []
+
+            if len(numeros_serie_reinspecao) == 0:
+                st.info("Nenhum checklist reprovado pendente para reinspeção.")
+            else:
+                numero_serie = st.selectbox(
+                    "Selecione o Nº de Série para Reinspeção",
+                    numeros_serie_reinspecao,
+                    index=0
+                )
+                checklist_qualidade(numero_serie, usuario)
+
+    st.markdown(
+        "<p style='text-align:center;color:gray;font-size:12px;margin-top:30px;'>Created by Engenharia de Produção</p>",
+        unsafe_allow_html=True
+    )
 
 # ==============================
 # EXECUÇÃO

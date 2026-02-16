@@ -115,7 +115,6 @@ def salvar_checklist(serie, resultados, usuario, foto_etiqueta=None, reinspecao=
             supabase.table("checklists").insert(payload).execute()
         except APIError as e:
             st.error("❌ Erro ao salvar no banco de dados.")
-            # alguns ambientes não têm esses campos, então protege:
             st.write("Detalhes do erro:", str(e))
             raise
 
@@ -145,29 +144,28 @@ def carregar_apontamentos():
     return df
 
 
+# ✅ ATUALIZADO (rápido e sem select *)
 def salvar_apontamento(serie, op, tipo_producao=None):
-    # normaliza
     serie = str(serie).strip()
     op = str(op).strip()
 
-    # janela do "hoje" em SP, convertida para UTC (evita errar virada do dia)
+    # janela do "hoje" em SP, convertida para UTC
     hoje_sp = datetime.datetime.now(TZ).date()
     inicio_sp = TZ.localize(datetime.datetime.combine(hoje_sp, datetime.time.min))
     fim_sp = TZ.localize(datetime.datetime.combine(hoje_sp, datetime.time.max))
     inicio_utc = inicio_sp.astimezone(pytz.UTC).isoformat()
     fim_utc = fim_sp.astimezone(pytz.UTC).isoformat()
 
-    # ✅ checagem leve: só precisa saber se existe 1 registro
+    # checagem leve
     response = (
         supabase.table("apontamentos")
-        .select("id")              # não traz tudo
+        .select("id")
         .eq("numero_serie", serie)
         .gte("data_hora", inicio_utc)
         .lte("data_hora", fim_utc)
-        .limit(1)                  # para no primeiro
+        .limit(1)
         .execute()
     )
-
     if response.data:
         return False
 
@@ -176,7 +174,6 @@ def salvar_apontamento(serie, op, tipo_producao=None):
         "op": op,
         "data_hora": datetime.datetime.now(pytz.UTC).isoformat(),
     }
-
     if tipo_producao is not None:
         dados["tipo_producao"] = tipo_producao
 
@@ -186,6 +183,7 @@ def salvar_apontamento(serie, op, tipo_producao=None):
     except Exception as e:
         st.error(f"Erro ao inserir apontamento: {e}")
         return False
+
 
 # =============================
 # Funções do App
@@ -326,7 +324,7 @@ def checklist_qualidade(numero_serie, usuario):
             st.warning("⏳ Salvamento em andamento... aguarde.")
             return
 
-        st.session_state.checklist_bloquequeado = True  # mantém sua lógica (só estava com typo na prática)
+        st.session_state.checklist_bloqueado = True  # ✅ corrigido (tinha typo no seu texto)
 
         faltando = [i for i, resp in resultados.items() if resp is None]
         modelos_faltando = [i for i in opcoes_modelos if modelos.get(i) is None or modelos[i] == ""]
@@ -362,7 +360,6 @@ def checklist_reinspecao(numero_serie, usuario):
     st.markdown(f"## 🔄 Reinspeção – Nº de Série: {numero_serie}")
 
     df_checks = carregar_checklists()
-
     df_inspecao = df_checks[(df_checks["numero_serie"] == numero_serie) & (df_checks["reinspecao"] != "Sim")]
 
     if df_inspecao.empty:
@@ -482,18 +479,33 @@ def checklist_reinspecao(numero_serie, usuario):
     return False
 
 
+# ================================
+# Página de Apontamento (2 caixas OP + Série, sem st.rerun() no callback)
+# ================================
 def pagina_apontamento():
     st.markdown("#  Registrar Apontamento")
     st.markdown("### ⏱️ Produção Hora a Hora")
 
-    df_apont = carregar_apontamentos()
-    tipo_producao = st.session_state.get("tipo_producao_apontamento", "Eixo")
+    # ======= cache curto só pro painel =======
+    @st.cache_data(ttl=15)
+    def carregar_apontamentos_cache():
+        return carregar_apontamentos()
 
+    # tipo produção
+    tipo_producao = st.radio(
+        "Tipo de produção:",
+        ["Eixo", "Manga", "PNM"],
+        horizontal=True,
+        key="tipo_producao_apontamento",
+    )
+
+    df_apont = carregar_apontamentos_cache()
     df_filtrado = df_apont[
-        (df_apont["tipo_producao"].str.contains(tipo_producao, case=False, na=False))
+        (df_apont.get("tipo_producao", "").astype(str).str.contains(tipo_producao, case=False, na=False))
         & (df_apont["data_hora"].dt.date == datetime.datetime.now(TZ).date())
     ] if not df_apont.empty else pd.DataFrame()
 
+    # metas
     meta_hora = {
         datetime.time(6, 0): 22,
         datetime.time(7, 0): 22,
@@ -509,9 +521,8 @@ def pagina_apontamento():
 
     col_meta = st.columns(len(meta_hora))
     col_prod = st.columns(len(meta_hora))
-
     for i, (h, m) in enumerate(meta_hora.items()):
-        produzido = len(df_filtrado[df_filtrado["data_hora"].dt.hour == h.hour])
+        produzido = len(df_filtrado[df_filtrado["data_hora"].dt.hour == h.hour]) if not df_filtrado.empty else 0
         col_meta[i].markdown(
             f"<div style='background-color:#4CAF50;color:white;padding:10px;border-radius:5px;text-align:center'><b>{h.strftime('%H:%M')}<br>{m}</b></div>",
             unsafe_allow_html=True,
@@ -521,93 +532,109 @@ def pagina_apontamento():
             unsafe_allow_html=True,
         )
 
-    tipo_producao = st.radio(
-        "Tipo de produção:",
-        ["Eixo", "Manga", "PNM"],
-        horizontal=True,
-        key="tipo_producao_apontamento",
-    )
-
+    # estados
     if "codigo_barras" not in st.session_state:
         st.session_state["codigo_barras"] = ""
     if "op_barras" not in st.session_state:
         st.session_state["op_barras"] = ""
     if "op_atual" not in st.session_state:
         st.session_state["op_atual"] = ""
+    if "erro_apont" not in st.session_state:
+        st.session_state["erro_apont"] = None
+    if "msg_ok" not in st.session_state:
+        st.session_state["msg_ok"] = None
 
+    # callbacks
     def processar_op():
-        op = st.session_state["op_barras"].strip()
-
+        op = (st.session_state.get("op_barras") or "").strip()
         if not op.isdigit() or len(op) != 11:
-            st.error("⚠️ A OP deve conter exatamente 11 dígitos numéricos.")
+            st.session_state["erro_apont"] = "⚠️ A OP deve conter exatamente 11 dígitos numéricos."
+            st.session_state["msg_ok"] = None
             st.session_state["op_barras"] = ""
             return
 
         st.session_state["op_atual"] = op
         st.session_state["op_barras"] = ""
+        st.session_state["erro_apont"] = None
+        st.session_state["msg_ok"] = "✅ OP lida. Agora bipe o Nº de Série (9 dígitos)."
 
         components.html(
             """
             <script>
             setTimeout(function(){
-                const inputSerie = window.parent.document.querySelector('input[id^="codigo_barras"]');
-                if(inputSerie){ inputSerie.focus(); }
-            }, 50);
+                const el = window.parent.document.querySelector('input[id^="codigo_barras"]');
+                if(el) el.focus();
+            }, 60);
             </script>
             """,
             height=0,
         )
 
-    if not st.session_state.get("op_atual"):
-        st.text_input(
-            "Leia a OP (11 dígitos):",
-            key="op_barras",
-            on_change=processar_op,
-            placeholder="Bipe a OP",
-        )
-    else:
-        st.text_input("OP (travada):", value=st.session_state.get("op_atual", ""), disabled=True, key="op_travada")
-
     def processar_codigo():
-        codigo = st.session_state["codigo_barras"].strip()
+        codigo = (st.session_state.get("codigo_barras") or "").strip()
         op = (st.session_state.get("op_atual") or "").strip()
 
         if not op:
-            st.error("⚠️ Primeiro bipe a OP (11 dígitos).")
+            st.session_state["erro_apont"] = "⚠️ Primeiro bipe a OP (11 dígitos)."
+            st.session_state["msg_ok"] = None
             st.session_state["codigo_barras"] = ""
             return
 
         if not codigo.isdigit() or len(codigo) != 9:
-            st.error("⚠️ O número de série deve conter exatamente 9 dígitos numéricos.")
+            st.session_state["erro_apont"] = "⚠️ O número de série deve conter exatamente 9 dígitos numéricos."
+            st.session_state["msg_ok"] = None
             st.session_state["codigo_barras"] = ""
             return
 
-        df_apont_local = carregar_apontamentos()
-        hoje = datetime.datetime.now(TZ).date()
-
-        if not df_apont_local.empty:
-            ja_apontado = df_apont_local[
-                (df_apont_local["numero_serie"] == codigo) & (df_apont_local["data_hora"].dt.date == hoje)
-            ]
-            if not ja_apontado.empty:
-                st.warning(f"⚠️ O código {codigo} já foi registrado hoje.")
-                st.session_state["codigo_barras"] = ""
-                return
-
         sucesso = salvar_apontamento(codigo, op, tipo_producao)
-        if sucesso:
-            st.success(f"Código {codigo} registrado com sucesso!")
-        else:
-            st.warning(f"Erro ao registrar o código {codigo}.")
 
+        # limpa série sempre
         st.session_state["codigo_barras"] = ""
 
-        st.session_state["op_atual"] = ""
-        st.session_state.pop("op_travada", None)
-        st.rerun()
+        if sucesso:
+            st.session_state["erro_apont"] = None
+            st.session_state["msg_ok"] = f"✅ Série {codigo} registrada! Próxima OP."
 
-    st.text_input("Leia o Número de Série (9 dígitos):", key="codigo_barras", on_change=processar_codigo)
+            # destrava OP
+            st.session_state["op_atual"] = ""
+            st.session_state.pop("op_travada", None)
 
+            # atualiza painel em seguida
+            st.cache_data.clear()
+            return
+        else:
+            st.session_state["erro_apont"] = f"⚠️ Série {codigo} já registrada hoje ou erro ao salvar."
+            st.session_state["msg_ok"] = None
+            return
+
+    # UI 2 caixas
+    colA, colB = st.columns([1, 1], gap="large")
+
+    with colA:
+        if not st.session_state.get("op_atual"):
+            st.text_input(
+                "Leia a OP (11 dígitos):",
+                key="op_barras",
+                on_change=processar_op,
+                placeholder="Bipe a OP",
+            )
+        else:
+            st.text_input(
+                "OP (travada):",
+                value=st.session_state.get("op_atual", ""),
+                disabled=True,
+                key="op_travada",
+            )
+
+    with colB:
+        st.text_input(
+            "Leia o Número de Série (9 dígitos):",
+            key="codigo_barras",
+            on_change=processar_codigo,
+            placeholder="Aproxime o leitor",
+        )
+
+    # foco automático (sem MutationObserver infinito)
     foco = "op_barras" if not st.session_state.get("op_atual") else "codigo_barras"
     components.html(
         f"""
@@ -615,19 +642,26 @@ def pagina_apontamento():
         setTimeout(function(){{
             const el = window.parent.document.querySelector('input[id^="{foco}"]');
             if(el) el.focus();
-        }}, 60);
+        }}, 80);
         </script>
         """,
         height=0,
     )
 
+    if st.session_state.get("erro_apont"):
+        st.warning(st.session_state["erro_apont"])
+    if st.session_state.get("msg_ok"):
+        st.success(st.session_state["msg_ok"])
+
+    # Últimos 10
+    st.markdown("### 📋 Últimos 10 Apontamentos")
     if not df_filtrado.empty:
-        ultimos = df_filtrado.sort_values("data_hora", ascending=False).head(10)
-        ultimos["data_hora_fmt"] = ultimos["data_hora"].dt.strftime("%d/%m/%Y %H:%M:%S")
-        st.markdown("### 📋 Últimos 10 Apontamentos")
+        ultimos = df_filtrado.sort_values("data_hora", ascending=False).head(10).copy()
+        ultimos["Hora"] = ultimos["data_hora"].dt.strftime("%d/%m/%Y %H:%M:%S")
         st.dataframe(
-            ultimos[["op", "numero_serie", "data_hora_fmt"]].rename(columns={"data_hora_fmt": "Hora"}),
+            ultimos[["op", "numero_serie", "Hora"]],
             use_container_width=True,
+            hide_index=True,
         )
     else:
         st.info("Nenhum apontamento encontrado.")
@@ -678,15 +712,12 @@ def app():
             st.info("Nenhum checklist registrado ainda.")
         else:
             df_reprovados = df_checks[(df_checks["produto_reprovado"] == "Sim") & (df_checks["reinspecao"] != "Sim")]
-
             numeros_serie_reinspecao = df_reprovados["numero_serie"].unique() if not df_reprovados.empty else []
 
             if len(numeros_serie_reinspecao) == 0:
                 st.info("Nenhum checklist reprovado pendente para reinspeção.")
             else:
-                numero_serie = st.selectbox(
-                    "Selecione o Nº de Série para Reinspeção", numeros_serie_reinspecao, index=0
-                )
+                numero_serie = st.selectbox("Selecione o Nº de Série para Reinspeção", numeros_serie_reinspecao, index=0)
                 checklist_qualidade(numero_serie, usuario)
 
     st.markdown(

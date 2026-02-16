@@ -126,7 +126,7 @@ def carregar_apontamentos():
     """Carrega todos os apontamentos do Supabase sem limite de 1000 linhas."""
     data_total = []
     inicio = 0
-    passo = 1000
+    passo = 200
 
     while True:
         response = supabase.table("apontamentos").select("*").range(inicio, inicio + passo - 1).execute()

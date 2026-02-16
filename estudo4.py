@@ -476,17 +476,17 @@ def checklist_reinspecao(numero_serie, usuario):
 # ================================
 def pagina_apontamento():
     st.markdown("#  Registrar Apontamento")
-
     st.markdown("### ⏱️ Produção Hora a Hora")
 
     df_apont = carregar_apontamentos()
-    tipo_producao = st.session_state.get("tipo_producao_apontamento", "Esteira")
+    tipo_producao = st.session_state.get("tipo_producao_apontamento", "Eixo")
 
     df_filtrado = df_apont[
         (df_apont["tipo_producao"].str.contains(tipo_producao, case=False, na=False)) &
         (df_apont["data_hora"].dt.date == datetime.datetime.now(TZ).date())
     ] if not df_apont.empty else pd.DataFrame()
 
+    # ======= metas hora a hora (igual seu) =======
     meta_hora = {
         datetime.time(6, 0): 22,
         datetime.time(7, 0): 22,
@@ -502,7 +502,6 @@ def pagina_apontamento():
 
     col_meta = st.columns(len(meta_hora))
     col_prod = st.columns(len(meta_hora))
-
     for i, (h, m) in enumerate(meta_hora.items()):
         produzido = len(df_filtrado[df_filtrado["data_hora"].dt.hour == h.hour])
         col_meta[i].markdown(
@@ -521,134 +520,126 @@ def pagina_apontamento():
         key="tipo_producao_apontamento"
     )
 
-    # estados
-    if "codigo_barras" not in st.session_state:
-        st.session_state["codigo_barras"] = ""
-    if "op_barras" not in st.session_state:
-        st.session_state["op_barras"] = ""
+    # ======= estados =======
+    if "leitor_apont" not in st.session_state:
+        st.session_state["leitor_apont"] = ""
     if "op_atual" not in st.session_state:
         st.session_state["op_atual"] = ""
+    if "erro_apont" not in st.session_state:
+        st.session_state["erro_apont"] = None
+    if "msg_ok" not in st.session_state:
+        st.session_state["msg_ok"] = None
 
-    # --- OP (11 dígitos) ---
-    def processar_op():
-        op = st.session_state["op_barras"].strip()
-
-        if not op.isdigit() or len(op) != 11:
-            st.error("⚠️ A OP deve conter exatamente 11 dígitos numéricos.")
-            st.session_state["op_barras"] = ""
+    # ======= callback único (igual MOLA) =======
+    def processar_leitura_unica():
+        leitura = (st.session_state.get("leitor_apont") or "").strip()
+        if not leitura:
             return
 
-        st.session_state["op_atual"] = op
-        st.session_state["op_barras"] = ""
+        # sempre limpa o input no fim
+        def limpar_input():
+            st.session_state["leitor_apont"] = ""
 
-        # limpa o campo travado antigo, se existir (evita “grudar”)
-        st.session_state.pop("op_travada", None)
-
-        # foco na série
-        components.html(
-            """
-            <script>
-            setTimeout(function(){
-                const inputSerie = window.parent.document.querySelector('input[id^="codigo_barras"]');
-                if(inputSerie){ inputSerie.focus(); }
-            }, 50);
-            </script>
-            """,
-            height=0
-        )
-
-    # Se não tem OP, mostra campo para bipar OP; se tem OP, mostra travada (cinza)
-    if not st.session_state.get("op_atual"):
-        st.text_input(
-            "Leia a OP (11 dígitos):",
-            key="op_barras",
-            on_change=processar_op,
-            placeholder="Bipe a OP"
-        )
-    else:
-        st.text_input(
-            "OP (travada):",
-            value=st.session_state.get("op_atual", ""),
-            disabled=True,
-            key="op_travada"
-        )
-
-    # --- Série (9 dígitos) ---
-    def processar_codigo():
-        codigo = st.session_state["codigo_barras"].strip()
-        op = (st.session_state.get("op_atual") or "").strip()
-
-        if not op:
-            st.error("⚠️ Primeiro bipe a OP (11 dígitos).")
-            st.session_state["codigo_barras"] = ""
+        # 1) esperando OP (11)
+        if not st.session_state.get("op_atual"):
+            if leitura.isdigit() and len(leitura) == 11:
+                st.session_state["op_atual"] = leitura
+                st.session_state["erro_apont"] = None
+                st.session_state["msg_ok"] = "✅ OP lida. Agora bipe o Nº de Série (9 dígitos)."
+            else:
+                st.session_state["erro_apont"] = "⚠️ Esperando OP (11 dígitos)."
+            limpar_input()
             return
 
-        if not codigo.isdigit() or len(codigo) != 9:
-            st.error("⚠️ O número de série deve conter exatamente 9 dígitos numéricos.")
-            st.session_state["codigo_barras"] = ""
-            return
+        # 2) com OP travada, agora espera Série (9)
+        if leitura.isdigit() and len(leitura) == 9:
+            codigo = leitura
+            op = st.session_state["op_atual"]
 
-        df_apont_local = carregar_apontamentos()
-        hoje = datetime.datetime.now(TZ).date()
+            # bloqueio de duplicidade no dia (igual seu)
+            df_apont_local = carregar_apontamentos()
+            hoje = datetime.datetime.now(TZ).date()
 
-        if not df_apont_local.empty:
-            ja_apontado = df_apont_local[
-                (df_apont_local["numero_serie"] == codigo) &
-                (df_apont_local["data_hora"].dt.date == hoje)
-            ]
-            if not ja_apontado.empty:
-                st.warning(f"⚠️ O código {codigo} já foi registrado hoje.")
-                st.session_state["codigo_barras"] = ""
-                return
+            if not df_apont_local.empty:
+                ja_apontado = df_apont_local[
+                    (df_apont_local["numero_serie"] == codigo) &
+                    (df_apont_local["data_hora"].dt.date == hoje)
+                ]
+                if not ja_apontado.empty:
+                    st.session_state["erro_apont"] = f"⚠️ O código {codigo} já foi registrado hoje."
+                    st.session_state["msg_ok"] = None
+                    limpar_input()
+                    return
 
-        sucesso = salvar_apontamento(codigo, op, tipo_producao)
-        if sucesso:
-            st.success(f"Código {codigo} registrado com sucesso!")
+            sucesso = salvar_apontamento(codigo, op, tipo_producao)
+            if sucesso:
+                st.session_state["msg_ok"] = f"✅ Série {codigo} registrada! Próxima OP."
+                st.session_state["erro_apont"] = None
+
+                # ✅ destrava para a próxima OP
+                st.session_state["op_atual"] = ""
+            else:
+                st.session_state["erro_apont"] = f"❌ Erro ao registrar a série {codigo}."
+                st.session_state["msg_ok"] = None
+
+            limpar_input()
+            st.rerun()
+
+        # se bipar outra coisa enquanto espera série
         else:
-            st.warning(f"Erro ao registrar o código {codigo}.")
+            st.session_state["erro_apont"] = "⚠️ Com OP já lida, agora bipe o Nº de Série (9 dígitos)."
+            st.session_state["msg_ok"] = None
+            limpar_input()
 
-        # limpa série
-        st.session_state["codigo_barras"] = ""
-
-        # ✅ AQUI é o ponto: destrava a OP para a próxima
-        st.session_state["op_atual"] = ""
-        st.session_state.pop("op_travada", None)
-
-        # força o rerun pra tela voltar pro campo de OP imediatamente
-        st.rerun()
-
+    # ======= input único =======
     st.text_input(
-        "Leia o Número de Série (9 dígitos):",
-        key="codigo_barras",
-        on_change=processar_codigo,
-        placeholder="Aproxime o leitor"
+        "Leitor",
+        key="leitor_apont",
+        placeholder="Bipe OP (11) e depois Série (9)…",
+        label_visibility="collapsed",
+        on_change=processar_leitura_unica
     )
 
-    # Foco automático simples (SEM observer infinito)
-    foco = "op_barras" if not st.session_state.get("op_atual") else "codigo_barras"
-    components.html(
-        f"""
+    # foco (pode manter MutationObserver aqui porque é 1 campo só)
+    components.html("""
         <script>
-        setTimeout(function(){{
-            const el = window.parent.document.querySelector('input[id^="{foco}"]');
-            if(el) el.focus();
-        }}, 60);
+        function focar(){
+            const input = window.parent.document.querySelector('input[id^="leitor_apont"]');
+            if(input){ input.focus(); }
+        }
+        focar();
+        new MutationObserver(focar).observe(
+            window.parent.document.body,
+            {childList:true, subtree:true}
+        );
         </script>
-        """,
-        height=0
-    )
+    """, height=0)
 
-    # ================= Últimos 10 apontamentos =================
+    # ======= status visual =======
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.markdown(f"🧾 OP atual: **{st.session_state.get('op_atual') or '-'}**")
+    with col2:
+        st.markdown(f"👤 Usuário: **{st.session_state.get('usuario', 'Operador_Logado')}**")
+
+    if st.session_state.get("erro_apont"):
+        st.warning(st.session_state["erro_apont"])
+    if st.session_state.get("msg_ok"):
+        st.success(st.session_state["msg_ok"])
+
+    # ======= Últimos 10 apontamentos =======
+    st.markdown("### 📋 Últimos 10 Apontamentos")
     if not df_filtrado.empty:
-        ultimos = df_filtrado.sort_values("data_hora", ascending=False).head(10)
-        ultimos["data_hora_fmt"] = ultimos["data_hora"].dt.strftime("%d/%m/%Y %H:%M:%S")
-        st.markdown("### 📋 Últimos 10 Apontamentos")
+        ultimos = df_filtrado.sort_values("data_hora", ascending=False).head(10).copy()
+        ultimos["Hora"] = ultimos["data_hora"].dt.strftime("%d/%m/%Y %H:%M:%S")
         st.dataframe(
-            ultimos[["op", "numero_serie", "data_hora_fmt"]].rename(columns={"data_hora_fmt": "Hora"}),
-            use_container_width=True
+            ultimos[["op", "numero_serie", "Hora"]],
+            use_container_width=True,
+            hide_index=True
         )
     else:
         st.info("Nenhum apontamento encontrado.")
+
 
 
 # ==============================

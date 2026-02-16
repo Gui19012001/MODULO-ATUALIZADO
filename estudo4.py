@@ -122,26 +122,36 @@ def salvar_checklist(serie, resultados, usuario, foto_etiqueta=None, reinspecao=
     return True
 
 
-def carregar_apontamentos():
-    """Carrega todos os apontamentos do Supabase sem limite de 1000 linhas."""
-    data_total = []
-    inicio = 0
-    passo = 200
+def carregar_apontamentos_hoje():
+    """Mais rápido ainda: busca só apontamentos de hoje (filtra no banco)."""
+    try:
+        hoje_sp = datetime.datetime.now(TZ).date()
+        inicio_sp = TZ.localize(datetime.datetime.combine(hoje_sp, datetime.time.min))
+        fim_sp = TZ.localize(datetime.datetime.combine(hoje_sp, datetime.time.max))
+        inicio_utc = inicio_sp.astimezone(pytz.UTC).isoformat()
+        fim_utc = fim_sp.astimezone(pytz.UTC).isoformat()
 
-    while True:
-        response = supabase.table("apontamentos").select("*").range(inicio, inicio + passo - 1).execute()
-        dados = response.data
-        if not dados:
-            break
-        data_total.extend(dados)
-        inicio += passo
+        resp = (
+            supabase.table("apontamentos")
+            .select("*")
+            .gte("data_hora", inicio_utc)
+            .lte("data_hora", fim_utc)
+            .order("data_hora", desc=True)
+            .limit(5000)  # normalmente sobra
+            .execute()
+        )
 
-    df = pd.DataFrame(data_total)
+        df = pd.DataFrame(resp.data)
 
-    if not df.empty:
-        df["data_hora"] = pd.to_datetime(df["data_hora"], errors="coerce", utc=True).dt.tz_convert(TZ)
+        if not df.empty:
+            df["data_hora"] = pd.to_datetime(df["data_hora"], errors="coerce", utc=True).dt.tz_convert(TZ)
 
-    return df
+        return df
+
+    except Exception as e:
+        st.error(f"Erro ao carregar apontamentos (hoje): {e}")
+        return pd.DataFrame()
+
 
 
 # ✅ ATUALIZADO (rápido e sem select *)

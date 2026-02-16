@@ -640,9 +640,6 @@ def pagina_apontamento():
     else:
         st.info("Nenhum apontamento encontrado.")
 
-
-
-
 # ==============================
 # EXECUÇÃO
 # ==============================

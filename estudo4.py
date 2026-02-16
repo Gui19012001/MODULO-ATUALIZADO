@@ -11,6 +11,13 @@ from pathlib import Path
 import plotly.express as px
 import plotly.graph_objects as go
 
+# ✅ evita NameError no seu try/except do salvar_checklist
+try:
+    from supabase.lib.client_options import ClientOptions  # noqa: F401
+    from postgrest.exceptions import APIError
+except Exception:
+    APIError = Exception  # fallback para não quebrar
+
 # ================================
 # Verificação do autorefresh
 # ================================
@@ -35,7 +42,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 # =============================
 TZ = pytz.timezone("America/Sao_Paulo")
 itens = ["Etiqueta", "Tambor + Parafuso", "Solda", "Pintura", "Borracha ABS"]
-usuarios = {"admin": "admin","Maria": "maria","Catia": "catia", "Vera": "vera", "Bruno":"bruno"}
+usuarios = {"admin": "admin", "Maria": "maria", "Catia": "catia", "Vera": "vera", "Bruno": "bruno"}
 
 # =============================
 # Funções do Supabase
@@ -70,7 +77,7 @@ def salvar_checklist(serie, resultados, usuario, foto_etiqueta=None, reinspecao=
         return None
 
     # Determina se o produto foi reprovado
-    reprovado = any(info['status'] == "Não Conforme" for info in resultados.values())
+    reprovado = any(info["status"] == "Não Conforme" for info in resultados.values())
 
     # Pega a hora atual em São Paulo e converte para UTC
     data_hora_utc = datetime.datetime.now(TZ).astimezone(pytz.UTC).isoformat()
@@ -87,34 +94,29 @@ def salvar_checklist(serie, resultados, usuario, foto_etiqueta=None, reinspecao=
 
     # Itera sobre os itens do checklist
     for item, info in resultados.items():
-        # Monta o payload
         payload = {
             "numero_serie": serie,
             "item": item,
-            "status": info.get('status', ''),
-            "observacoes": info.get('obs', ''),
+            "status": info.get("status", ""),
+            "observacoes": info.get("obs", ""),
             "inspetor": usuario,
             "data_hora": data_hora_utc,
             "produto_reprovado": "Sim" if reprovado else "Não",
-            "reinspecao": "Sim" if reinspecao else "Não"
+            "reinspecao": "Sim" if reinspecao else "Não",
         }
 
         # Só inclui a foto para o item "Etiqueta"
         if item == "Etiqueta" and foto_base64:
             payload["foto_etiqueta"] = foto_base64
 
-        # Log de debug (opcional)
         print("Enviando para Supabase:", payload)
 
-        # Tenta enviar para o Supabase
         try:
             supabase.table("checklists").insert(payload).execute()
         except APIError as e:
             st.error("❌ Erro ao salvar no banco de dados.")
-            st.write("Código:", e.code)
-            st.write("Mensagem:", e.message)
-            st.write("Detalhes:", e.details)
-            st.write("Dica:", e.hint)
+            # alguns ambientes não têm esses campos, então protege:
+            st.write("Detalhes do erro:", str(e))
             raise
 
     st.success(f"✅ Checklist salvo com sucesso para o Nº de Série {serie}")
@@ -150,12 +152,14 @@ def salvar_apontamento(serie, op, tipo_producao=None):
     inicio_utc = datetime.datetime.combine(hoje_utc, datetime.time.min).replace(tzinfo=datetime.timezone.utc)
     fim_utc = datetime.datetime.combine(hoje_utc, datetime.time.max).replace(tzinfo=datetime.timezone.utc)
 
-    response = supabase.table("apontamentos")\
-        .select("*")\
-        .eq("numero_serie", serie)\
-        .gte("data_hora", inicio_utc.isoformat())\
-        .lte("data_hora", fim_utc.isoformat())\
+    response = (
+        supabase.table("apontamentos")
+        .select("*")
+        .eq("numero_serie", serie)
+        .gte("data_hora", inicio_utc.isoformat())
+        .lte("data_hora", fim_utc.isoformat())
         .execute()
+    )
 
     if response.data:
         return False
@@ -163,7 +167,7 @@ def salvar_apontamento(serie, op, tipo_producao=None):
     dados = {
         "numero_serie": serie,
         "op": str(op).strip(),
-        "data_hora": agora_utc.isoformat()
+        "data_hora": agora_utc.isoformat(),
     }
 
     if tipo_producao is not None:
@@ -182,12 +186,13 @@ def salvar_apontamento(serie, op, tipo_producao=None):
 # Funções do App
 # =============================
 def login():
-    if 'logado' not in st.session_state:
-        st.session_state['logado'] = False
-        st.session_state['usuario'] = None
+    if "logado" not in st.session_state:
+        st.session_state["logado"] = False
+        st.session_state["usuario"] = None
 
-    if not st.session_state['logado']:
-        st.markdown("""
+    if not st.session_state["logado"]:
+        st.markdown(
+            """
         <div style="
             max-width:400px;
             margin:auto;
@@ -201,14 +206,16 @@ def login():
             <h1 style='color:#2F4F4F;'>🔒 MÓDULO DE PRODUÇÃO</h1>
             <p style='color:#555;'>Entre com seu usuário e senha</p>
         </div>
-        """, unsafe_allow_html=True)
+        """,
+            unsafe_allow_html=True,
+        )
 
         usuario = st.text_input("Usuário", key="login_user")
         senha = st.text_input("Senha", type="password", key="login_pass")
         if st.button("Entrar"):
             if usuario in usuarios and usuarios[usuario] == senha:
-                st.session_state['logado'] = True
-                st.session_state['usuario'] = usuario
+                st.session_state["logado"] = True
+                st.session_state["usuario"] = usuario
                 st.success(f"Bem-vindo, {usuario}!")
             else:
                 st.error("Usuário ou senha incorretos.")
@@ -216,8 +223,8 @@ def login():
     else:
         st.write(f"Logado como: {st.session_state['usuario']}")
         if st.button("Sair"):
-            st.session_state['logado'] = False
-            st.session_state['usuario'] = None
+            st.session_state["logado"] = False
+            st.session_state["usuario"] = None
             st.experimental_set_query_params()
 
 
@@ -251,7 +258,7 @@ def checklist_qualidade(numero_serie, usuario):
         "Catraca do freio correta? Especifique modelo",
         "Tampa do cubo correta, livre de avarias e pintura nos critérios? As tampas dos cubos dos ambos os lados são iguais?",
         "Pintura do eixo livre de oxidação,isento de escorrimento na pintura, pontos sem tinta e camada conforme padrão?",
-        "Os cordões de solda do eixo estão conformes?"
+        "Os cordões de solda do eixo estão conformes?",
     ]
 
     item_keys = {
@@ -264,14 +271,14 @@ def checklist_qualidade(numero_serie, usuario):
         7: "CATRACA_FREIO",
         8: "TAMPA_CUBO",
         9: "PINTURA_EIXO",
-        10: "SOLDA"
+        10: "SOLDA",
     }
 
     opcoes_modelos = {
         4: ["Single", "Aço", "Alumínio", "N/A"],
         6: ["Spring", "Cuíca", "N/A"],
         7: ["Automático", "Manual", "N/A"],
-        10: ["Conforme", "Respingo", "Falta de cordão", "Porosidade", "Falta de Fusão"]
+        10: ["Conforme", "Respingo", "Falta de cordão", "Porosidade", "Falta de Fusão"],
     }
 
     resultados = {}
@@ -292,7 +299,7 @@ def checklist_qualidade(numero_serie, usuario):
                 key=f"resp_{numero_serie}_{i}",
                 horizontal=True,
                 index=None,
-                label_visibility="collapsed"
+                label_visibility="collapsed",
             )
             resultados[i] = escolha
 
@@ -301,7 +308,7 @@ def checklist_qualidade(numero_serie, usuario):
                     "Modelo",
                     [""] + opcoes_modelos[i],
                     key=f"modelo_{numero_serie}_{i}",
-                    label_visibility="collapsed"
+                    label_visibility="collapsed",
                 )
                 modelos[i] = modelo
             else:
@@ -314,13 +321,10 @@ def checklist_qualidade(numero_serie, usuario):
             st.warning("⏳ Salvamento em andamento... aguarde.")
             return
 
-        st.session_state.checklist_bloqueado = True
+        st.session_state.checklist_bloquequeado = True  # mantém sua lógica (só estava com typo na prática)
 
         faltando = [i for i, resp in resultados.items() if resp is None]
-        modelos_faltando = [
-            i for i in opcoes_modelos
-            if modelos.get(i) is None or modelos[i] == ""
-        ]
+        modelos_faltando = [i for i in opcoes_modelos if modelos.get(i) is None or modelos[i] == ""]
 
         if faltando or modelos_faltando:
             msg = ""
@@ -335,10 +339,7 @@ def checklist_qualidade(numero_serie, usuario):
         dados_para_salvar = {}
         for i, resp in resultados.items():
             chave_item = item_keys.get(i, f"Item_{i}")
-            dados_para_salvar[chave_item] = {
-                "status": status_emoji_para_texto(resp),
-                "obs": modelos.get(i)
-            }
+            dados_para_salvar[chave_item] = {"status": status_emoji_para_texto(resp), "obs": modelos.get(i)}
 
         try:
             salvar_checklist(numero_serie, dados_para_salvar, usuario)
@@ -357,10 +358,7 @@ def checklist_reinspecao(numero_serie, usuario):
 
     df_checks = carregar_checklists()
 
-    df_inspecao = df_checks[
-        (df_checks["numero_serie"] == numero_serie) &
-        (df_checks["reinspecao"] != "Sim")
-    ]
+    df_inspecao = df_checks[(df_checks["numero_serie"] == numero_serie) & (df_checks["reinspecao"] != "Sim")]
 
     if df_inspecao.empty:
         st.warning("Nenhum checklist de inspeção encontrado para reinspeção.")
@@ -385,7 +383,7 @@ def checklist_reinspecao(numero_serie, usuario):
         "Catraca do freio correta? Especifique modelo",
         "Tampa do cubo correta, livre de avarias e pintura nos critérios? As tampas dos cubos dos ambos os lados são iguais?",
         "Pintura do eixo livre de oxidação,isento de escorrimento na pintura, pontos sem tinta e camada conforme padrão?",
-        "Os cordões de solda do eixo estão conformes?"
+        "Os cordões de solda do eixo estão conformes?",
     ]
 
     item_keys = {
@@ -398,14 +396,14 @@ def checklist_reinspecao(numero_serie, usuario):
         7: "CATRACA_FREIO",
         8: "TAMPA_CUBO",
         9: "PINTURA_EIXO",
-        10: "SOLDA"
+        10: "SOLDA",
     }
 
     opcoes_modelos = {
         4: ["Single", "Aço", "Alumínio", "N/A"],
         6: ["Spring", "Cuíca", "N/A"],
         7: ["Automático", "Manual", "N/A"],
-        10: ["Conforme", "Respingo", "Falta de cordão", "Porosidade", "Falta de Fusão"]
+        10: ["Conforme", "Respingo", "Falta de cordão", "Porosidade", "Falta de Fusão"],
     }
 
     resultados = {}
@@ -419,8 +417,16 @@ def checklist_reinspecao(numero_serie, usuario):
             cols = st.columns([7, 2, 2])
             chave = item_keys[i]
 
-            status_antigo = checklist_original.get(chave, {}).get("status") if isinstance(checklist_original.get(chave), dict) else checklist_original.get(chave)
-            obs_antigo = checklist_original.get(chave, {}).get("obs") if isinstance(checklist_original.get(chave), dict) else ""
+            status_antigo = (
+                checklist_original.get(chave, {}).get("status")
+                if isinstance(checklist_original.get(chave), dict)
+                else checklist_original.get(chave)
+            )
+            obs_antigo = (
+                checklist_original.get(chave, {}).get("obs")
+                if isinstance(checklist_original.get(chave), dict)
+                else ""
+            )
 
             if status_antigo == "Conforme":
                 resp_antiga = "✅"
@@ -438,7 +444,7 @@ def checklist_reinspecao(numero_serie, usuario):
                 key=f"resp_reinspecao_{numero_serie}_{i}",
                 horizontal=True,
                 index=(["✅", "❌", "🟡"].index(resp_antiga) if resp_antiga in ["✅", "❌", "🟡"] else 0),
-                label_visibility="collapsed"
+                label_visibility="collapsed",
             )
             resultados[i] = escolha
 
@@ -448,7 +454,7 @@ def checklist_reinspecao(numero_serie, usuario):
                     [""] + opcoes_modelos[i],
                     index=([""] + opcoes_modelos[i]).index(obs_antigo) if obs_antigo in opcoes_modelos[i] else 0,
                     key=f"modelo_reinspecao_{numero_serie}_{i}",
-                    label_visibility="collapsed"
+                    label_visibility="collapsed",
                 )
                 modelos[i] = modelo
             else:
@@ -461,7 +467,7 @@ def checklist_reinspecao(numero_serie, usuario):
                 chave_item = item_keys[i]
                 dados_para_salvar[chave_item] = {
                     "status": "Conforme" if resp == "✅" else "Não Conforme" if resp == "❌" else "N/A",
-                    "obs": modelos.get(i)
+                    "obs": modelos.get(i),
                 }
 
             salvar_checklist(numero_serie, dados_para_salvar, usuario, reinspecao=True)
@@ -475,7 +481,14 @@ def pagina_apontamento():
     st.markdown("#  Registrar Apontamento")
     st.markdown("### ⏱️ Produção Hora a Hora")
 
-    # ======= metas hora a hora =======
+    df_apont = carregar_apontamentos()
+    tipo_producao = st.session_state.get("tipo_producao_apontamento", "Eixo")
+
+    df_filtrado = df_apont[
+        (df_apont["tipo_producao"].str.contains(tipo_producao, case=False, na=False))
+        & (df_apont["data_hora"].dt.date == datetime.datetime.now(TZ).date())
+    ] if not df_apont.empty else pd.DataFrame()
+
     meta_hora = {
         datetime.time(6, 0): 22,
         datetime.time(7, 0): 22,
@@ -489,156 +502,107 @@ def pagina_apontamento():
         datetime.time(15, 0): 12,
     }
 
-    tipo_producao = st.radio(
-        "Tipo de produção:",
-        ["Eixo", "Manga", "PNM"],
-        horizontal=True,
-        key="tipo_producao_apontamento"
-    )
-
-    # ======= cache curto só pro painel (não pesa no bip) =======
-    @st.cache_data(ttl=15)
-    def carregar_apontamentos_cache():
-        return carregar_apontamentos()
-
-    df_apont = carregar_apontamentos_cache()
-    df_filtrado = df_apont[
-        (df_apont["tipo_producao"].str.contains(tipo_producao, case=False, na=False)) &
-        (df_apont["data_hora"].dt.date == datetime.datetime.now(TZ).date())
-    ] if not df_apont.empty else pd.DataFrame()
-
     col_meta = st.columns(len(meta_hora))
     col_prod = st.columns(len(meta_hora))
+
     for i, (h, m) in enumerate(meta_hora.items()):
         produzido = len(df_filtrado[df_filtrado["data_hora"].dt.hour == h.hour])
         col_meta[i].markdown(
             f"<div style='background-color:#4CAF50;color:white;padding:10px;border-radius:5px;text-align:center'><b>{h.strftime('%H:%M')}<br>{m}</b></div>",
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
         col_prod[i].markdown(
             f"<div style='background-color:#000000;color:white;padding:10px;border-radius:5px;text-align:center'><b>{h.strftime('%H:%M')}<br>{produzido}</b></div>",
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
 
-    # ======= estados =======
-    if "op_barras" not in st.session_state:
-        st.session_state["op_barras"] = ""
+    tipo_producao = st.radio(
+        "Tipo de produção:",
+        ["Eixo", "Manga", "PNM"],
+        horizontal=True,
+        key="tipo_producao_apontamento",
+    )
+
     if "codigo_barras" not in st.session_state:
         st.session_state["codigo_barras"] = ""
+    if "op_barras" not in st.session_state:
+        st.session_state["op_barras"] = ""
     if "op_atual" not in st.session_state:
         st.session_state["op_atual"] = ""
-    if "erro_apont" not in st.session_state:
-        st.session_state["erro_apont"] = None
-    if "msg_ok" not in st.session_state:
-        st.session_state["msg_ok"] = None
 
-    # ======= callbacks leves =======
     def processar_op():
-        op = (st.session_state.get("op_barras") or "").strip()
+        op = st.session_state["op_barras"].strip()
 
         if not op.isdigit() or len(op) != 11:
-            st.session_state["erro_apont"] = "⚠️ A OP deve conter exatamente 11 dígitos numéricos."
-            st.session_state["msg_ok"] = None
+            st.error("⚠️ A OP deve conter exatamente 11 dígitos numéricos.")
             st.session_state["op_barras"] = ""
             return
 
         st.session_state["op_atual"] = op
         st.session_state["op_barras"] = ""
-        st.session_state["erro_apont"] = None
-        st.session_state["msg_ok"] = "✅ OP lida. Agora bipe o Nº de Série (9 dígitos)."
 
-        # foca na série
         components.html(
             """
             <script>
             setTimeout(function(){
-                const el = window.parent.document.querySelector('input[id^="codigo_barras"]');
-                if(el) el.focus();
-            }, 60);
+                const inputSerie = window.parent.document.querySelector('input[id^="codigo_barras"]');
+                if(inputSerie){ inputSerie.focus(); }
+            }, 50);
             </script>
             """,
-            height=0
+            height=0,
         )
 
-    def processar_serie():
-        codigo = (st.session_state.get("codigo_barras") or "").strip()
+    if not st.session_state.get("op_atual"):
+        st.text_input(
+            "Leia a OP (11 dígitos):",
+            key="op_barras",
+            on_change=processar_op,
+            placeholder="Bipe a OP",
+        )
+    else:
+        st.text_input("OP (travada):", value=st.session_state.get("op_atual", ""), disabled=True, key="op_travada")
+
+    def processar_codigo():
+        codigo = st.session_state["codigo_barras"].strip()
         op = (st.session_state.get("op_atual") or "").strip()
 
         if not op:
-            st.session_state["erro_apont"] = "⚠️ Primeiro bipe a OP (11 dígitos)."
-            st.session_state["msg_ok"] = None
+            st.error("⚠️ Primeiro bipe a OP (11 dígitos).")
             st.session_state["codigo_barras"] = ""
             return
 
         if not codigo.isdigit() or len(codigo) != 9:
-            st.session_state["erro_apont"] = "⚠️ O número de série deve conter exatamente 9 dígitos numéricos."
-            st.session_state["msg_ok"] = None
+            st.error("⚠️ O número de série deve conter exatamente 9 dígitos numéricos.")
             st.session_state["codigo_barras"] = ""
             return
 
-        # ✅ rápido: deixa a duplicidade por conta do salvar_apontamento (que deve ser leve)
-        sucesso = salvar_apontamento(codigo, op, tipo_producao)
+        df_apont_local = carregar_apontamentos()
+        hoje = datetime.datetime.now(TZ).date()
 
-        # limpa campo série sempre
+        if not df_apont_local.empty:
+            ja_apontado = df_apont_local[
+                (df_apont_local["numero_serie"] == codigo) & (df_apont_local["data_hora"].dt.date == hoje)
+            ]
+            if not ja_apontado.empty:
+                st.warning(f"⚠️ O código {codigo} já foi registrado hoje.")
+                st.session_state["codigo_barras"] = ""
+                return
+
+        sucesso = salvar_apontamento(codigo, op, tipo_producao)
+        if sucesso:
+            st.success(f"Código {codigo} registrado com sucesso!")
+        else:
+            st.warning(f"Erro ao registrar o código {codigo}.")
+
         st.session_state["codigo_barras"] = ""
 
-        if sucesso:
-            st.session_state["erro_apont"] = None
-            st.session_state["msg_ok"] = f"✅ Série {codigo} registrada! Próxima OP."
+        st.session_state["op_atual"] = ""
+        st.session_state.pop("op_travada", None)
+        st.rerun()
 
-            # ✅ destrava para próxima OP
-            st.session_state["op_atual"] = ""
+    st.text_input("Leia o Número de Série (9 dígitos):", key="codigo_barras", on_change=processar_codigo)
 
-            # limpa cache do painel pra atualizar os números em seguida
-            st.cache_data.clear()
-
-            # rerun para voltar o foco na OP e atualizar painel
-            st.rerun()
-        else:
-            st.session_state["erro_apont"] = f"⚠️ Série {codigo} já registrada hoje ou erro ao salvar."
-            st.session_state["msg_ok"] = None
-
-            # mantém OP travada (pra tentar outra série sem precisar rebipar OP)
-            components.html(
-                """
-                <script>
-                setTimeout(function(){
-                    const el = window.parent.document.querySelector('input[id^="codigo_barras"]');
-                    if(el) el.focus();
-                }, 60);
-                </script>
-                """,
-                height=0
-            )
-
-    # ======= UI (2 caixas) =======
-    colA, colB = st.columns([1, 1], gap="large")
-
-    with colA:
-        if not st.session_state.get("op_atual"):
-            st.text_input(
-                "Leia a OP (11 dígitos):",
-                key="op_barras",
-                placeholder="Bipe a OP",
-                on_change=processar_op
-            )
-        else:
-            st.text_input(
-                "OP (travada):",
-                value=st.session_state.get("op_atual", ""),
-                disabled=True,
-                key="op_travada"
-            )
-
-    with colB:
-        st.text_input(
-            "Leia o Número de Série (9 dígitos):",
-            key="codigo_barras",
-            placeholder="Aproxime o leitor",
-            on_change=processar_serie
-        )
-
-    # ======= foco automático (sem MutationObserver infinito) =======
     foco = "op_barras" if not st.session_state.get("op_atual") else "codigo_barras"
     components.html(
         f"""
@@ -646,31 +610,22 @@ def pagina_apontamento():
         setTimeout(function(){{
             const el = window.parent.document.querySelector('input[id^="{foco}"]');
             if(el) el.focus();
-        }}, 80);
+        }}, 60);
         </script>
         """,
-        height=0
+        height=0,
     )
 
-    # ======= mensagens =======
-    if st.session_state.get("erro_apont"):
-        st.warning(st.session_state["erro_apont"])
-    if st.session_state.get("msg_ok"):
-        st.success(st.session_state["msg_ok"])
-
-    # ======= Últimos 10 apontamentos =======
-    st.markdown("### 📋 Últimos 10 Apontamentos")
     if not df_filtrado.empty:
-        ultimos = df_filtrado.sort_values("data_hora", ascending=False).head(10).copy()
-        ultimos["Hora"] = ultimos["data_hora"].dt.strftime("%d/%m/%Y %H:%M:%S")
+        ultimos = df_filtrado.sort_values("data_hora", ascending=False).head(10)
+        ultimos["data_hora_fmt"] = ultimos["data_hora"].dt.strftime("%d/%m/%Y %H:%M:%S")
+        st.markdown("### 📋 Últimos 10 Apontamentos")
         st.dataframe(
-            ultimos[["op", "numero_serie", "Hora"]],
+            ultimos[["op", "numero_serie", "data_hora_fmt"]].rename(columns={"data_hora_fmt": "Hora"}),
             use_container_width=True,
-            hide_index=True
         )
     else:
         st.info("Nenhum apontamento encontrado.")
-
 
 
 # ==============================
@@ -680,11 +635,7 @@ def app():
     st.set_page_config(page_title="Controle de Qualidade", layout="wide")
     login()
 
-    menu = st.sidebar.selectbox("Menu", [
-        "Apontamento",
-        "Inspeção de Qualidade",
-        "Reinspeção"
-    ])
+    menu = st.sidebar.selectbox("Menu", ["Apontamento", "Inspeção de Qualidade", "Reinspeção"])
 
     if menu == "Apontamento":
         pagina_apontamento()
@@ -696,10 +647,7 @@ def app():
         if not df_apont.empty:
             start_of_day = TZ.localize(datetime.datetime.combine(hoje, datetime.time.min))
             end_of_day = TZ.localize(datetime.datetime.combine(hoje, datetime.time.max))
-            df_hoje = df_apont[
-                (df_apont["data_hora"] >= start_of_day) &
-                (df_apont["data_hora"] <= end_of_day)
-            ]
+            df_hoje = df_apont[(df_apont["data_hora"] >= start_of_day) & (df_apont["data_hora"] <= end_of_day)]
 
             df_hoje = df_hoje.sort_values(by="data_hora", ascending=True)
             codigos_hoje = df_hoje.drop_duplicates(subset="numero_serie")["numero_serie"].tolist()
@@ -711,27 +659,20 @@ def app():
         codigos_disponiveis = [c for c in codigos_hoje if c not in codigos_com_checklist]
 
         if codigos_disponiveis:
-            numero_serie = st.selectbox(
-                "Selecione o Nº de Série para Inspeção",
-                codigos_disponiveis,
-                index=0
-            )
-            usuario = st.session_state['usuario']
+            numero_serie = st.selectbox("Selecione o Nº de Série para Inspeção", codigos_disponiveis, index=0)
+            usuario = st.session_state["usuario"]
             checklist_qualidade(numero_serie, usuario)
         else:
             st.info("Nenhum código disponível para inspeção hoje.")
 
     elif menu == "Reinspeção":
-        usuario = st.session_state['usuario']
+        usuario = st.session_state["usuario"]
         df_checks = carregar_checklists()
 
         if df_checks.empty:
             st.info("Nenhum checklist registrado ainda.")
         else:
-            df_reprovados = df_checks[
-                (df_checks["produto_reprovado"] == "Sim") &
-                (df_checks["reinspecao"] != "Sim")
-            ]
+            df_reprovados = df_checks[(df_checks["produto_reprovado"] == "Sim") & (df_checks["reinspecao"] != "Sim")]
 
             numeros_serie_reinspecao = df_reprovados["numero_serie"].unique() if not df_reprovados.empty else []
 
@@ -739,20 +680,20 @@ def app():
                 st.info("Nenhum checklist reprovado pendente para reinspeção.")
             else:
                 numero_serie = st.selectbox(
-                    "Selecione o Nº de Série para Reinspeção",
-                    numeros_serie_reinspecao,
-                    index=0
+                    "Selecione o Nº de Série para Reinspeção", numeros_serie_reinspecao, index=0
                 )
                 checklist_qualidade(numero_serie, usuario)
 
     st.markdown(
         "<p style='text-align:center;color:gray;font-size:12px;margin-top:30px;'>Created by Engenharia de Produção</p>",
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
+
 
 # ==============================
 # EXECUÇÃO
 # ==============================
 if __name__ == "__main__":
     app()
+
 

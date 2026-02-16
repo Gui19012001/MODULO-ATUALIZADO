@@ -146,18 +146,25 @@ def carregar_apontamentos():
 
 
 def salvar_apontamento(serie, op, tipo_producao=None):
-    agora_utc = datetime.datetime.now(datetime.timezone.utc)
-    hoje_utc = agora_utc.date()
+    # normaliza
+    serie = str(serie).strip()
+    op = str(op).strip()
 
-    inicio_utc = datetime.datetime.combine(hoje_utc, datetime.time.min).replace(tzinfo=datetime.timezone.utc)
-    fim_utc = datetime.datetime.combine(hoje_utc, datetime.time.max).replace(tzinfo=datetime.timezone.utc)
+    # janela do "hoje" em SP, convertida para UTC (evita errar virada do dia)
+    hoje_sp = datetime.datetime.now(TZ).date()
+    inicio_sp = TZ.localize(datetime.datetime.combine(hoje_sp, datetime.time.min))
+    fim_sp = TZ.localize(datetime.datetime.combine(hoje_sp, datetime.time.max))
+    inicio_utc = inicio_sp.astimezone(pytz.UTC).isoformat()
+    fim_utc = fim_sp.astimezone(pytz.UTC).isoformat()
 
+    # ✅ checagem leve: só precisa saber se existe 1 registro
     response = (
         supabase.table("apontamentos")
-        .select("*")
+        .select("id")              # não traz tudo
         .eq("numero_serie", serie)
-        .gte("data_hora", inicio_utc.isoformat())
-        .lte("data_hora", fim_utc.isoformat())
+        .gte("data_hora", inicio_utc)
+        .lte("data_hora", fim_utc)
+        .limit(1)                  # para no primeiro
         .execute()
     )
 
@@ -166,21 +173,19 @@ def salvar_apontamento(serie, op, tipo_producao=None):
 
     dados = {
         "numero_serie": serie,
-        "op": str(op).strip(),
-        "data_hora": agora_utc.isoformat(),
+        "op": op,
+        "data_hora": datetime.datetime.now(pytz.UTC).isoformat(),
     }
 
     if tipo_producao is not None:
         dados["tipo_producao"] = tipo_producao
 
-    res = supabase.table("apontamentos").insert(dados).execute()
-
-    if res.data and not getattr(res, "error", None):
-        return True
-    else:
-        st.error(f"Erro ao inserir apontamento: {getattr(res, 'error', 'Desconhecido')}")
+    try:
+        res = supabase.table("apontamentos").insert(dados).execute()
+        return bool(res.data)
+    except Exception as e:
+        st.error(f"Erro ao inserir apontamento: {e}")
         return False
-
 
 # =============================
 # Funções do App

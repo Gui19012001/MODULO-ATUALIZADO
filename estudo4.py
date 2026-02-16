@@ -122,22 +122,14 @@ def salvar_checklist(serie, resultados, usuario, foto_etiqueta=None, reinspecao=
     return True
 
 
-def carregar_apontamentos_hoje():
-    """Mais rápido ainda: busca só apontamentos de hoje (filtra no banco)."""
+def carregar_apontamentos():
+    """Rápido: carrega só os últimos apontamentos (igual MOLA)."""
     try:
-        hoje_sp = datetime.datetime.now(TZ).date()
-        inicio_sp = TZ.localize(datetime.datetime.combine(hoje_sp, datetime.time.min))
-        fim_sp = TZ.localize(datetime.datetime.combine(hoje_sp, datetime.time.max))
-        inicio_utc = inicio_sp.astimezone(pytz.UTC).isoformat()
-        fim_utc = fim_sp.astimezone(pytz.UTC).isoformat()
-
         resp = (
             supabase.table("apontamentos")
             .select("*")
-            .gte("data_hora", inicio_utc)
-            .lte("data_hora", fim_utc)
             .order("data_hora", desc=True)
-            .limit(5000)  # normalmente sobra
+            .limit(2000)  # ajuste se quiser 1000/3000
             .execute()
         )
 
@@ -149,8 +141,9 @@ def carregar_apontamentos_hoje():
         return df
 
     except Exception as e:
-        st.error(f"Erro ao carregar apontamentos (hoje): {e}")
+        st.error(f"Erro ao carregar apontamentos: {e}")
         return pd.DataFrame()
+
 
 
 

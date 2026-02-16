@@ -521,6 +521,7 @@ def pagina_apontamento():
         key="tipo_producao_apontamento"
     )
 
+    # estados
     if "codigo_barras" not in st.session_state:
         st.session_state["codigo_barras"] = ""
     if "op_barras" not in st.session_state:
@@ -540,7 +541,10 @@ def pagina_apontamento():
         st.session_state["op_atual"] = op
         st.session_state["op_barras"] = ""
 
-        # foca automaticamente no campo de série
+        # limpa o campo travado antigo, se existir (evita “grudar”)
+        st.session_state.pop("op_travada", None)
+
+        # foco na série
         components.html(
             """
             <script>
@@ -603,11 +607,15 @@ def pagina_apontamento():
         else:
             st.warning(f"Erro ao registrar o código {codigo}.")
 
+        # limpa série
         st.session_state["codigo_barras"] = ""
 
-        # mantém OP para próximas leituras (não limpa)
-        # se quiser limpar a OP após 1 série, descomente:
-        # st.session_state["op_atual"] = ""
+        # ✅ AQUI é o ponto: destrava a OP para a próxima
+        st.session_state["op_atual"] = ""
+        st.session_state.pop("op_travada", None)
+
+        # força o rerun pra tela voltar pro campo de OP imediatamente
+        st.rerun()
 
     st.text_input(
         "Leia o Número de Série (9 dígitos):",
@@ -616,30 +624,15 @@ def pagina_apontamento():
         placeholder="Aproxime o leitor"
     )
 
-    # Foco automático:
-    # - sem OP: foca OP
-    # - com OP: foca Série
+    # Foco automático simples (SEM observer infinito)
+    foco = "op_barras" if not st.session_state.get("op_atual") else "codigo_barras"
     components.html(
-        """
+        f"""
         <script>
-        function focarCorreto(){
-            const op = window.parent.document.querySelector('input[id^="op_barras"]');
-            const serie = window.parent.document.querySelector('input[id^="codigo_barras"]');
-            const bodyText = window.parent.document.body.innerText || "";
-
-            // quando a OP estiver travada, sempre foco na série
-            if(bodyText.includes("OP (travada):")){
-                if(serie){ serie.focus(); return; }
-            }
-
-            // caso ainda não tenha OP, foco na OP
-            if(op){ op.focus(); }
-        }
-        focarCorreto();
-        new MutationObserver(focarCorreto).observe(
-            window.parent.document.body,
-            {childList: true, subtree: true}
-        );
+        setTimeout(function(){{
+            const el = window.parent.document.querySelector('input[id^="{foco}"]');
+            if(el) el.focus();
+        }}, 60);
         </script>
         """,
         height=0
@@ -657,83 +650,6 @@ def pagina_apontamento():
     else:
         st.info("Nenhum apontamento encontrado.")
 
-
-# ==============================
-# APP PRINCIPAL
-# ==============================
-def app():
-    st.set_page_config(page_title="Controle de Qualidade", layout="wide")
-    login()
-
-    menu = st.sidebar.selectbox("Menu", [
-        "Apontamento",
-        "Inspeção de Qualidade",
-        "Reinspeção"
-    ])
-
-    if menu == "Apontamento":
-        pagina_apontamento()
-
-    elif menu == "Inspeção de Qualidade":
-        df_apont = carregar_apontamentos()
-        hoje = datetime.datetime.now(TZ).date()
-
-        if not df_apont.empty:
-            start_of_day = TZ.localize(datetime.datetime.combine(hoje, datetime.time.min))
-            end_of_day = TZ.localize(datetime.datetime.combine(hoje, datetime.time.max))
-            df_hoje = df_apont[
-                (df_apont["data_hora"] >= start_of_day) &
-                (df_apont["data_hora"] <= end_of_day)
-            ]
-
-            df_hoje = df_hoje.sort_values(by="data_hora", ascending=True)
-            codigos_hoje = df_hoje.drop_duplicates(subset="numero_serie")["numero_serie"].tolist()
-        else:
-            codigos_hoje = []
-
-        df_checks = carregar_checklists()
-        codigos_com_checklist = df_checks["numero_serie"].unique() if not df_checks.empty else []
-        codigos_disponiveis = [c for c in codigos_hoje if c not in codigos_com_checklist]
-
-        if codigos_disponiveis:
-            numero_serie = st.selectbox(
-                "Selecione o Nº de Série para Inspeção",
-                codigos_disponiveis,
-                index=0
-            )
-            usuario = st.session_state['usuario']
-            checklist_qualidade(numero_serie, usuario)
-        else:
-            st.info("Nenhum código disponível para inspeção hoje.")
-
-    elif menu == "Reinspeção":
-        usuario = st.session_state['usuario']
-        df_checks = carregar_checklists()
-
-        if df_checks.empty:
-            st.info("Nenhum checklist registrado ainda.")
-        else:
-            df_reprovados = df_checks[
-                (df_checks["produto_reprovado"] == "Sim") &
-                (df_checks["reinspecao"] != "Sim")
-            ]
-
-            numeros_serie_reinspecao = df_reprovados["numero_serie"].unique() if not df_reprovados.empty else []
-
-            if len(numeros_serie_reinspecao) == 0:
-                st.info("Nenhum checklist reprovado pendente para reinspeção.")
-            else:
-                numero_serie = st.selectbox(
-                    "Selecione o Nº de Série para Reinspeção",
-                    numeros_serie_reinspecao,
-                    index=0
-                )
-                checklist_qualidade(numero_serie, usuario)
-
-    st.markdown(
-        "<p style='text-align:center;color:gray;font-size:12px;margin-top:30px;'>Created by Engenharia de Produção</p>",
-        unsafe_allow_html=True
-    )
 
 # ==============================
 # EXECUÇÃO

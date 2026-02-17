@@ -483,7 +483,7 @@ def checklist_reinspecao(numero_serie, usuario):
 
 
 # ================================
-# Página de Apontamento (2 caixas OP + Série, sem st.rerun() no callback)
+# Página de Apontamento (2 caixas OP + Série, foco automático robusto)
 # ================================
 def pagina_apontamento():
     st.markdown("#  Registrar Apontamento")
@@ -494,7 +494,66 @@ def pagina_apontamento():
     def carregar_apontamentos_cache():
         return carregar_apontamentos()
 
-    # tipo produção
+    # ================================
+    # Helper: foco robusto (espera o input existir)
+    # ================================
+    def _render_focus(target_prefix: str):
+        components.html(
+            f"""
+            <script>
+            (function() {{
+              const prefix = "{target_prefix}";
+              const start = Date.now();
+
+              function tryFocus() {{
+                const el = window.parent.document.querySelector('input[id^="' + prefix + '"]');
+                if (el) {{
+                  el.focus();
+                  if (el.select) el.select();
+                  return true;
+                }}
+                return false;
+              }}
+
+              if (tryFocus()) return;
+
+              const obs = new MutationObserver(() => {{
+                if (tryFocus()) obs.disconnect();
+                if (Date.now() - start > 2000) obs.disconnect();
+              }});
+
+              obs.observe(window.parent.document.body, {{ childList: true, subtree: true }});
+
+              const iv = setInterval(() => {{
+                if (tryFocus() || (Date.now() - start > 2000)) clearInterval(iv);
+              }}, 80);
+            }})();
+            </script>
+            """,
+            height=0,
+        )
+
+    # ================================
+    # Estados
+    # ================================
+    if "codigo_barras" not in st.session_state:
+        st.session_state["codigo_barras"] = ""
+    if "op_barras" not in st.session_state:
+        st.session_state["op_barras"] = ""
+    if "op_atual" not in st.session_state:
+        st.session_state["op_atual"] = ""
+    if "erro_apont" not in st.session_state:
+        st.session_state["erro_apont"] = None
+    if "msg_ok" not in st.session_state:
+        st.session_state["msg_ok"] = None
+
+    # ✅ controle central de foco (inicio do turno = OP)
+    if "foco_apont" not in st.session_state:
+        st.session_state["foco_apont"] = "op"  # "op" | "serie"
+
+    # ================================
+    # Tipo de produção
+    # ================================
     tipo_producao = st.radio(
         "Tipo de produção:",
         ["Eixo", "Manga", "PNM"],
@@ -503,12 +562,18 @@ def pagina_apontamento():
     )
 
     df_apont = carregar_apontamentos_cache()
-    df_filtrado = df_apont[
-        (df_apont.get("tipo_producao", "").astype(str).str.contains(tipo_producao, case=False, na=False))
-        & (df_apont["data_hora"].dt.date == datetime.datetime.now(TZ).date())
-    ] if not df_apont.empty else pd.DataFrame()
+    df_filtrado = (
+        df_apont[
+            (df_apont.get("tipo_producao", "").astype(str).str.contains(tipo_producao, case=False, na=False))
+            & (df_apont["data_hora"].dt.date == datetime.datetime.now(TZ).date())
+        ]
+        if not df_apont.empty
+        else pd.DataFrame()
+    )
 
-    # metas
+    # ================================
+    # Metas
+    # ================================
     meta_hora = {
         datetime.time(6, 0): 22,
         datetime.time(7, 0): 22,
@@ -527,51 +592,34 @@ def pagina_apontamento():
     for i, (h, m) in enumerate(meta_hora.items()):
         produzido = len(df_filtrado[df_filtrado["data_hora"].dt.hour == h.hour]) if not df_filtrado.empty else 0
         col_meta[i].markdown(
-            f"<div style='background-color:#4CAF50;color:white;padding:10px;border-radius:5px;text-align:center'><b>{h.strftime('%H:%M')}<br>{m}</b></div>",
+            f"<div style='background-color:#4CAF50;color:white;padding:10px;border-radius:5px;text-align:center'>"
+            f"<b>{h.strftime('%H:%M')}<br>{m}</b></div>",
             unsafe_allow_html=True,
         )
         col_prod[i].markdown(
-            f"<div style='background-color:#000000;color:white;padding:10px;border-radius:5px;text-align:center'><b>{h.strftime('%H:%M')}<br>{produzido}</b></div>",
+            f"<div style='background-color:#000000;color:white;padding:10px;border-radius:5px;text-align:center'>"
+            f"<b>{h.strftime('%H:%M')}<br>{produzido}</b></div>",
             unsafe_allow_html=True,
         )
 
-    # estados
-    if "codigo_barras" not in st.session_state:
-        st.session_state["codigo_barras"] = ""
-    if "op_barras" not in st.session_state:
-        st.session_state["op_barras"] = ""
-    if "op_atual" not in st.session_state:
-        st.session_state["op_atual"] = ""
-    if "erro_apont" not in st.session_state:
-        st.session_state["erro_apont"] = None
-    if "msg_ok" not in st.session_state:
-        st.session_state["msg_ok"] = None
-
-    # callbacks
+    # ================================
+    # Callbacks
+    # ================================
     def processar_op():
         op = (st.session_state.get("op_barras") or "").strip()
-        if not op.isdigit() or len(op) != 11:
+
+        if (not op.isdigit()) or len(op) != 11:
             st.session_state["erro_apont"] = "⚠️ A OP deve conter exatamente 11 dígitos numéricos."
             st.session_state["msg_ok"] = None
             st.session_state["op_barras"] = ""
+            st.session_state["foco_apont"] = "op"
             return
 
         st.session_state["op_atual"] = op
         st.session_state["op_barras"] = ""
         st.session_state["erro_apont"] = None
         st.session_state["msg_ok"] = "✅ OP lida. Agora bipe o Nº de Série (9 dígitos)."
-
-        components.html(
-            """
-            <script>
-            setTimeout(function(){
-                const el = window.parent.document.querySelector('input[id^="codigo_barras"]');
-                if(el) el.focus();
-            }, 60);
-            </script>
-            """,
-            height=0,
-        )
+        st.session_state["foco_apont"] = "serie"
 
     def processar_codigo():
         codigo = (st.session_state.get("codigo_barras") or "").strip()
@@ -581,12 +629,14 @@ def pagina_apontamento():
             st.session_state["erro_apont"] = "⚠️ Primeiro bipe a OP (11 dígitos)."
             st.session_state["msg_ok"] = None
             st.session_state["codigo_barras"] = ""
+            st.session_state["foco_apont"] = "op"
             return
 
-        if not codigo.isdigit() or len(codigo) != 9:
+        if (not codigo.isdigit()) or len(codigo) != 9:
             st.session_state["erro_apont"] = "⚠️ O número de série deve conter exatamente 9 dígitos numéricos."
             st.session_state["msg_ok"] = None
             st.session_state["codigo_barras"] = ""
+            st.session_state["foco_apont"] = "serie"
             return
 
         sucesso = salvar_apontamento(codigo, op, tipo_producao)
@@ -602,15 +652,18 @@ def pagina_apontamento():
             st.session_state["op_atual"] = ""
             st.session_state.pop("op_travada", None)
 
-            # atualiza painel em seguida
+            st.session_state["foco_apont"] = "op"
             st.cache_data.clear()
             return
         else:
             st.session_state["erro_apont"] = f"⚠️ Série {codigo} já registrada hoje ou erro ao salvar."
             st.session_state["msg_ok"] = None
+            st.session_state["foco_apont"] = "serie"
             return
 
+    # ================================
     # UI 2 caixas
+    # ================================
     colA, colB = st.columns([1, 1], gap="large")
 
     with colA:
@@ -637,26 +690,21 @@ def pagina_apontamento():
             placeholder="Aproxime o leitor",
         )
 
-    # foco automático (sem MutationObserver infinito)
-    foco = "op_barras" if not st.session_state.get("op_atual") else "codigo_barras"
-    components.html(
-        f"""
-        <script>
-        setTimeout(function(){{
-            const el = window.parent.document.querySelector('input[id^="{foco}"]');
-            if(el) el.focus();
-        }}, 80);
-        </script>
-        """,
-        height=0,
-    )
+    # ================================
+    # ✅ Foco automático (robusto)
+    # ================================
+    prefix = "op_barras" if st.session_state.get("foco_apont") == "op" else "codigo_barras"
+    _render_focus(prefix)
 
+    # Mensagens
     if st.session_state.get("erro_apont"):
         st.warning(st.session_state["erro_apont"])
     if st.session_state.get("msg_ok"):
         st.success(st.session_state["msg_ok"])
 
+    # ================================
     # Últimos 10
+    # ================================
     st.markdown("### 📋 Últimos 10 Apontamentos")
     if not df_filtrado.empty:
         ultimos = df_filtrado.sort_values("data_hora", ascending=False).head(10).copy()

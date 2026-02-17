@@ -483,7 +483,7 @@ def checklist_reinspecao(numero_serie, usuario):
 
 
 # ================================
-# Página de Apontamento (2 caixas OP + Série, foco automático robusto)
+# Página de Apontamento (ESTILO MOLA: 1 leitor, salva automático)
 # ================================
 def pagina_apontamento():
     st.markdown("#  Registrar Apontamento")
@@ -493,63 +493,6 @@ def pagina_apontamento():
     @st.cache_data(ttl=15)
     def carregar_apontamentos_cache():
         return carregar_apontamentos()
-
-    # ================================
-    # Helper: foco robusto (espera o input existir)
-    # ================================
-    def _render_focus(target_prefix: str):
-        components.html(
-            f"""
-            <script>
-            (function() {{
-              const prefix = "{target_prefix}";
-              const start = Date.now();
-
-              function tryFocus() {{
-                const el = window.parent.document.querySelector('input[id^="' + prefix + '"]');
-                if (el) {{
-                  el.focus();
-                  if (el.select) el.select();
-                  return true;
-                }}
-                return false;
-              }}
-
-              if (tryFocus()) return;
-
-              const obs = new MutationObserver(() => {{
-                if (tryFocus()) obs.disconnect();
-                if (Date.now() - start > 2000) obs.disconnect();
-              }});
-
-              obs.observe(window.parent.document.body, {{ childList: true, subtree: true }});
-
-              const iv = setInterval(() => {{
-                if (tryFocus() || (Date.now() - start > 2000)) clearInterval(iv);
-              }}, 80);
-            }})();
-            </script>
-            """,
-            height=0,
-        )
-
-    # ================================
-    # Estados
-    # ================================
-    if "codigo_barras" not in st.session_state:
-        st.session_state["codigo_barras"] = ""
-    if "op_barras" not in st.session_state:
-        st.session_state["op_barras"] = ""
-    if "op_atual" not in st.session_state:
-        st.session_state["op_atual"] = ""
-    if "erro_apont" not in st.session_state:
-        st.session_state["erro_apont"] = None
-    if "msg_ok" not in st.session_state:
-        st.session_state["msg_ok"] = None
-
-    # ✅ controle central de foco (inicio do turno = OP)
-    if "foco_apont" not in st.session_state:
-        st.session_state["foco_apont"] = "op"  # "op" | "serie"
 
     # ================================
     # Tipo de produção
@@ -603,104 +546,122 @@ def pagina_apontamento():
         )
 
     # ================================
-    # Callbacks
+    # Estados (estilo MOLA)
     # ================================
-    def processar_op():
-        op = (st.session_state.get("op_barras") or "").strip()
-
-        if (not op.isdigit()) or len(op) != 11:
-            st.session_state["erro_apont"] = "⚠️ A OP deve conter exatamente 11 dígitos numéricos."
-            st.session_state["msg_ok"] = None
-            st.session_state["op_barras"] = ""
-            st.session_state["foco_apont"] = "op"
-            return
-
-        st.session_state["op_atual"] = op
-        st.session_state["op_barras"] = ""
+    if "input_leitor_apont" not in st.session_state:
+        st.session_state["input_leitor_apont"] = ""
+    if "serie_pendente" not in st.session_state:
+        st.session_state["serie_pendente"] = ""
+    if "op_pendente" not in st.session_state:
+        st.session_state["op_pendente"] = ""
+    if "erro_apont" not in st.session_state:
         st.session_state["erro_apont"] = None
-        st.session_state["msg_ok"] = "✅ OP lida. Agora bipe o Nº de Série (9 dígitos)."
-        st.session_state["foco_apont"] = "serie"
+    if "msg_ok" not in st.session_state:
+        st.session_state["msg_ok"] = None
 
-    def processar_codigo():
-        codigo = (st.session_state.get("codigo_barras") or "").strip()
-        op = (st.session_state.get("op_atual") or "").strip()
-
-        if not op:
-            st.session_state["erro_apont"] = "⚠️ Primeiro bipe a OP (11 dígitos)."
-            st.session_state["msg_ok"] = None
-            st.session_state["codigo_barras"] = ""
-            st.session_state["foco_apont"] = "op"
+    # ================================
+    # Callback do leitor (OP 11 / Série 9)
+    # ================================
+    def processar_leitura_apont():
+        leitura = (st.session_state.get("input_leitor_apont") or "").strip()
+        if not leitura:
             return
 
-        if (not codigo.isdigit()) or len(codigo) != 9:
-            st.session_state["erro_apont"] = "⚠️ O número de série deve conter exatamente 9 dígitos numéricos."
-            st.session_state["msg_ok"] = None
-            st.session_state["codigo_barras"] = ""
-            st.session_state["foco_apont"] = "serie"
+        # limpa msg anterior
+        st.session_state["erro_apont"] = None
+        st.session_state["msg_ok"] = None
+
+        # valida: só número
+        if not leitura.isdigit():
+            st.session_state["erro_apont"] = "⚠️ Leitura inválida. Use apenas códigos numéricos."
+            st.session_state["input_leitor_apont"] = ""
             return
 
-        sucesso = salvar_apontamento(codigo, op, tipo_producao)
+        # Série (9)
+        if len(leitura) == 9:
+            st.session_state["serie_pendente"] = leitura
+            st.session_state["msg_ok"] = "✅ Série lida. Agora bipe a OP (11 dígitos)."
 
-        # limpa série sempre
-        st.session_state["codigo_barras"] = ""
+        # OP (11)
+        elif len(leitura) == 11:
+            st.session_state["op_pendente"] = leitura
+            st.session_state["msg_ok"] = "✅ OP lida. Agora bipe a Série (9 dígitos)."
 
-        if sucesso:
-            st.session_state["erro_apont"] = None
-            st.session_state["msg_ok"] = f"✅ Série {codigo} registrada! Próxima OP."
-
-            # destrava OP
-            st.session_state["op_atual"] = ""
-            st.session_state.pop("op_travada", None)
-
-            st.session_state["foco_apont"] = "op"
-            st.cache_data.clear()
-            return
         else:
-            st.session_state["erro_apont"] = f"⚠️ Série {codigo} já registrada hoje ou erro ao salvar."
-            st.session_state["msg_ok"] = None
-            st.session_state["foco_apont"] = "serie"
+            st.session_state["erro_apont"] = "⚠️ Código inválido. Série = 9 dígitos | OP = 11 dígitos."
+            st.session_state["input_leitor_apont"] = ""
             return
 
-    # ================================
-    # UI 2 caixas
-    # ================================
-    colA, colB = st.columns([1, 1], gap="large")
+        # se já tem os dois, salva automático
+        serie = (st.session_state.get("serie_pendente") or "").strip()
+        op = (st.session_state.get("op_pendente") or "").strip()
 
-    with colA:
-        if not st.session_state.get("op_atual"):
-            st.text_input(
-                "Leia a OP (11 dígitos):",
-                key="op_barras",
-                on_change=processar_op,
-                placeholder="Bipe a OP",
-            )
-        else:
-            st.text_input(
-                "OP (travada):",
-                value=st.session_state.get("op_atual", ""),
-                disabled=True,
-                key="op_travada",
-            )
+        if serie and op:
+            sucesso = salvar_apontamento(serie, op, tipo_producao)
 
-    with colB:
-        st.text_input(
-            "Leia o Número de Série (9 dígitos):",
-            key="codigo_barras",
-            on_change=processar_codigo,
-            placeholder="Aproxime o leitor",
-        )
+            if sucesso:
+                st.session_state["msg_ok"] = f"✅ Apontado: Série {serie} | OP {op}. Próximo!"
+                st.session_state["erro_apont"] = None
+
+                # limpa para o próximo ciclo
+                st.session_state["serie_pendente"] = ""
+                st.session_state["op_pendente"] = ""
+
+                # atualiza painel
+                st.cache_data.clear()
+            else:
+                st.session_state["erro_apont"] = f"⚠️ Série {serie} já registrada hoje ou erro ao salvar."
+                st.session_state["msg_ok"] = None
+                # mantém OP (geralmente continua a mesma) e limpa só a série pra re-bipar
+                st.session_state["serie_pendente"] = ""
+
+        # limpa o input sempre
+        st.session_state["input_leitor_apont"] = ""
 
     # ================================
-    # ✅ Foco automático (robusto)
+    # UI: 1 input de leitor (igual MOLA)
     # ================================
-    prefix = "op_barras" if st.session_state.get("foco_apont") == "op" else "codigo_barras"
-    _render_focus(prefix)
+    st.text_input(
+        "Leitor",
+        key="input_leitor_apont",
+        placeholder="Aproxime o leitor (Série 9 / OP 11)...",
+        label_visibility="collapsed",
+        on_change=processar_leitura_apont,
+    )
 
-    # Mensagens
+    # ✅ foco contínuo (igual MOLA)
+    components.html(
+        """
+        <script>
+        function focarInput(){
+            const input = window.parent.document.querySelector('input[placeholder="Aproxime o leitor (Série 9 / OP 11)..."]');
+            if(input){ input.focus(); }
+        }
+        focarInput();
+        new MutationObserver(focarInput).observe(
+            window.parent.document.body,
+            {childList: true, subtree: true}
+        );
+        </script>
+        """,
+        height=0,
+    )
+
+    # ================================
+    # Mostra pendências (feedback pro operador)
+    # ================================
+    col1, col2, col3 = st.columns([2, 2, 2])
+    col1.markdown(f"📦 Série: **{st.session_state.get('serie_pendente') or '-'}**")
+    col2.markdown(f"🧾 OP: **{st.session_state.get('op_pendente') or '-'}**")
+    col3.markdown(f"🏷️ Tipo: **{tipo_producao}**")
+
     if st.session_state.get("erro_apont"):
         st.warning(st.session_state["erro_apont"])
+        st.session_state["erro_apont"] = None
+
     if st.session_state.get("msg_ok"):
         st.success(st.session_state["msg_ok"])
+        st.session_state["msg_ok"] = None
 
     # ================================
     # Últimos 10
@@ -716,6 +677,7 @@ def pagina_apontamento():
         )
     else:
         st.info("Nenhum apontamento encontrado.")
+
 
 
 # ==============================

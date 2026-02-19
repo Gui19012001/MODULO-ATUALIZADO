@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 import plotly.express as px
 import plotly.graph_objects as go
+import time
 
 # ✅ evita NameError no seu try/except do salvar_checklist
 try:
@@ -17,6 +18,11 @@ try:
     from postgrest.exceptions import APIError
 except Exception:
     APIError = Exception  # fallback para não quebrar
+
+# ==============================
+# ✅ PAGE CONFIG (TEM QUE SER A PRIMEIRA CHAMADA STREAMLIT)
+# ==============================
+st.set_page_config(page_title="Controle de Qualidade", layout="wide")
 
 # ================================
 # Verificação do autorefresh
@@ -129,7 +135,7 @@ def carregar_apontamentos():
             supabase.table("apontamentos")
             .select("*")
             .order("data_hora", desc=True)
-            .limit(2000)  # ajuste se quiser 1000/3000
+            .limit(2000)
             .execute()
         )
 
@@ -143,8 +149,6 @@ def carregar_apontamentos():
     except Exception as e:
         st.error(f"Erro ao carregar apontamentos: {e}")
         return pd.DataFrame()
-
-
 
 
 # ✅ ATUALIZADO (rápido e sem select *)
@@ -244,8 +248,6 @@ def status_emoji_para_texto(emoji):
 
 
 def checklist_qualidade(numero_serie, usuario):
-    import time
-
     st.markdown(f"## ✔️ Checklist de Qualidade – Nº de Série: {numero_serie}")
 
     if "checklist_bloqueado" not in st.session_state:
@@ -327,7 +329,7 @@ def checklist_qualidade(numero_serie, usuario):
             st.warning("⏳ Salvamento em andamento... aguarde.")
             return
 
-        st.session_state.checklist_bloqueado = True  # ✅ corrigido (tinha typo no seu texto)
+        st.session_state.checklist_bloqueado = True
 
         faltando = [i for i, resp in resultados.items() if resp is None]
         modelos_faltando = [i for i in opcoes_modelos if modelos.get(i) is None or modelos[i] == ""]
@@ -483,20 +485,21 @@ def checklist_reinspecao(numero_serie, usuario):
 
 
 # ================================
-# Página de Apontamento (ESTILO MOLA: 1 leitor, salva automático)
+# Página de Apontamento (1 leitor, OP obrigatório primeiro, depois Série)
+# ✅ NOVO: OP sozinha expira em 4s (start quando OP é lida) usando st_autorefresh(4000ms)
+# ✅ reset pós sucesso também limpa em 4s
 # ================================
 def pagina_apontamento():
     st.markdown("#  Registrar Apontamento")
     st.markdown("### ⏱️ Produção Hora a Hora")
 
-    # ======= cache curto só pro painel =======
+    OP_TIMEOUT_SEG = 4
+    RESET_TIMEOUT_SEG = 4
+
     @st.cache_data(ttl=15)
     def carregar_apontamentos_cache():
         return carregar_apontamentos()
 
-    # ================================
-    # Tipo de produção
-    # ================================
     tipo_producao = st.radio(
         "Tipo de produção:",
         ["Eixo", "Manga", "PNM"],
@@ -535,8 +538,8 @@ def pagina_apontamento():
     for i, (h, m) in enumerate(meta_hora.items()):
         produzido = len(df_filtrado[df_filtrado["data_hora"].dt.hour == h.hour]) if not df_filtrado.empty else 0
         col_meta[i].markdown(
-            f"<div style='background-color:#4CAF50;color:white;padding:10px;border-radius:5px;text-align:center'>"
-            f"<b>{h.strftime('%H:%M')}<br>{m}</b></div>",
+            f"<div style='background-color:#4CAF50;colorwhite;padding:10px;border-radius:5px;text-align:center'>"
+            f"<b>{h.strftime('%H:%M')}<br>{m}</b></div>".replace("colorwhite", "color:white;"),
             unsafe_allow_html=True,
         )
         col_prod[i].markdown(
@@ -546,49 +549,101 @@ def pagina_apontamento():
         )
 
     # ================================
-    # Estados (estilo MOLA)
+    # Estados
     # ================================
-    if "input_leitor_apont" not in st.session_state:
-        st.session_state["input_leitor_apont"] = ""
-    if "serie_pendente" not in st.session_state:
+    st.session_state.setdefault("input_leitor_apont", "")
+    st.session_state.setdefault("serie_pendente", "")
+    st.session_state.setdefault("op_pendente", "")
+    st.session_state.setdefault("erro_apont", None)
+    st.session_state.setdefault("msg_ok", None)
+
+    # timers
+    st.session_state.setdefault("reset_after_success", False)
+    st.session_state.setdefault("success_ts", None)
+
+    # timer da OP sozinha
+    st.session_state.setdefault("op_ts", None)
+
+    def resetar_leituras(limpar_msg=True, msg_erro=None):
         st.session_state["serie_pendente"] = ""
-    if "op_pendente" not in st.session_state:
         st.session_state["op_pendente"] = ""
-    if "erro_apont" not in st.session_state:
-        st.session_state["erro_apont"] = None
-    if "msg_ok" not in st.session_state:
-        st.session_state["msg_ok"] = None
+        st.session_state["input_leitor_apont"] = ""
+        st.session_state["reset_after_success"] = False
+        st.session_state["success_ts"] = None
+        st.session_state["op_ts"] = None
+        if limpar_msg:
+            st.session_state["msg_ok"] = None
+            st.session_state["erro_apont"] = msg_erro
+
+    op_atual = (st.session_state.get("op_pendente") or "").strip()
+    serie_atual = (st.session_state.get("serie_pendente") or "").strip()
 
     # ================================
-    # Callback do leitor (OP 11 / Série 9)
+    # ✅ AUTORERUN: 4s (só quando precisa)
+    # ================================
+    precisa_tick_op = bool(op_atual and not serie_atual)
+    precisa_tick_reset = bool(st.session_state.get("reset_after_success"))
+
+    if (precisa_tick_op or precisa_tick_reset) and AUTORELOAD_AVAILABLE:
+        st_autorefresh(interval=4000, key="tick_4s")
+
+    # ================================
+    # Regras de tempo (4s)
+    # ================================
+    if op_atual and not serie_atual and st.session_state.get("op_ts"):
+        if time.time() - st.session_state["op_ts"] >= OP_TIMEOUT_SEG:
+            resetar_leituras(limpar_msg=True, msg_erro="⏱️ Tempo expirado (4s). Bipe a OP novamente.")
+            st.rerun()
+
+    if st.session_state.get("reset_after_success") and st.session_state.get("success_ts"):
+        if time.time() - st.session_state["success_ts"] >= RESET_TIMEOUT_SEG:
+            resetar_leituras(limpar_msg=True, msg_erro=None)
+            st.rerun()
+
+    # ================================
+    # Callback do leitor (OP obrigatório primeiro)
     # ================================
     def processar_leitura_apont():
         leitura = (st.session_state.get("input_leitor_apont") or "").strip()
         if not leitura:
             return
 
-        # limpa msg anterior
         st.session_state["erro_apont"] = None
         st.session_state["msg_ok"] = None
 
-        # valida: só número
         if not leitura.isdigit():
             st.session_state["erro_apont"] = "⚠️ Leitura inválida. Use apenas códigos numéricos."
             st.session_state["input_leitor_apont"] = ""
             return
 
-        # Série (9)
-        if len(leitura) == 9:
-            st.session_state["serie_pendente"] = leitura
-            st.session_state["msg_ok"] = "✅ Série lida. Agora bipe a OP (11 dígitos)."
+        op_local = (st.session_state.get("op_pendente") or "").strip()
+        serie_local = (st.session_state.get("serie_pendente") or "").strip()
 
-        # OP (11)
-        elif len(leitura) == 11:
-            st.session_state["op_pendente"] = leitura
-            st.session_state["msg_ok"] = "✅ OP lida. Agora bipe a Série (9 dígitos)."
+        # ✅ OP precisa vir primeiro
+        if not op_local:
+            if len(leitura) == 11:
+                st.session_state["op_pendente"] = leitura
+                st.session_state["op_ts"] = time.time()  # ✅ START do timer (4s)
+                st.session_state["msg_ok"] = "✅ OP lida. Agora bipe a Série (9 dígitos)."
+            elif len(leitura) == 9:
+                st.session_state["erro_apont"] = "⚠️ Primeiro a OP (11 dígitos). Depois a Série (9 dígitos)."
+            else:
+                st.session_state["erro_apont"] = "⚠️ Código inválido. OP = 11 dígitos."
+            st.session_state["input_leitor_apont"] = ""
+            return
 
+        # OP já existe -> agora só aceita Série
+        if not serie_local:
+            if len(leitura) == 9:
+                st.session_state["serie_pendente"] = leitura
+                st.session_state["msg_ok"] = "✅ Série lida. Salvando..."
+            elif len(leitura) == 11:
+                st.session_state["erro_apont"] = "⚠️ OP já foi lida. Agora bipe apenas a Série (9 dígitos)."
+            else:
+                st.session_state["erro_apont"] = "⚠️ Código inválido. Série = 9 dígitos."
+            st.session_state["input_leitor_apont"] = ""
         else:
-            st.session_state["erro_apont"] = "⚠️ Código inválido. Série = 9 dígitos | OP = 11 dígitos."
+            st.session_state["erro_apont"] = "⚠️ Já existe OP e Série pendentes. Aguarde o salvamento/reset."
             st.session_state["input_leitor_apont"] = ""
             return
 
@@ -603,38 +658,42 @@ def pagina_apontamento():
                 st.session_state["msg_ok"] = f"✅ Apontado: Série {serie} | OP {op}. Próximo!"
                 st.session_state["erro_apont"] = None
 
-                # limpa para o próximo ciclo
+                st.cache_data.clear()
+
+                # ✅ depois do sucesso: reseta em 4s
+                st.session_state["reset_after_success"] = True
+                st.session_state["success_ts"] = time.time()
+
+                # zera pendências já (mas mantém msg até reset)
                 st.session_state["serie_pendente"] = ""
                 st.session_state["op_pendente"] = ""
+                st.session_state["op_ts"] = None
 
-                # atualiza painel
-                st.cache_data.clear()
             else:
                 st.session_state["erro_apont"] = f"⚠️ Série {serie} já registrada hoje ou erro ao salvar."
                 st.session_state["msg_ok"] = None
-                # mantém OP (geralmente continua a mesma) e limpa só a série pra re-bipar
-                st.session_state["serie_pendente"] = ""
 
-        # limpa o input sempre
+                # mantém OP e volta a ficar "OP sozinha", reinicia timer (4s)
+                st.session_state["serie_pendente"] = ""
+                st.session_state["op_ts"] = time.time()
+
         st.session_state["input_leitor_apont"] = ""
 
-    # ================================
-    # UI: 1 input de leitor (igual MOLA)
-    # ================================
+    # UI input
     st.text_input(
         "Leitor",
         key="input_leitor_apont",
-        placeholder="Aproxime o leitor (Série 9 / OP 11)...",
+        placeholder="Aproxime o leitor (OP 11 primeiro, depois Série 9)...",
         label_visibility="collapsed",
         on_change=processar_leitura_apont,
     )
 
-    # ✅ foco contínuo (igual MOLA)
+    # foco contínuo
     components.html(
         """
         <script>
         function focarInput(){
-            const input = window.parent.document.querySelector('input[placeholder="Aproxime o leitor (Série 9 / OP 11)..."]');
+            const input = window.parent.document.querySelector('input[placeholder="Aproxime o leitor (OP 11 primeiro, depois Série 9)..."]');
             if(input){ input.focus(); }
         }
         focarInput();
@@ -647,9 +706,7 @@ def pagina_apontamento():
         height=0,
     )
 
-    # ================================
-    # Mostra pendências (feedback pro operador)
-    # ================================
+    # feedback
     col1, col2, col3 = st.columns([2, 2, 2])
     col1.markdown(f"📦 Série: **{st.session_state.get('serie_pendente') or '-'}**")
     col2.markdown(f"🧾 OP: **{st.session_state.get('op_pendente') or '-'}**")
@@ -661,11 +718,9 @@ def pagina_apontamento():
 
     if st.session_state.get("msg_ok"):
         st.success(st.session_state["msg_ok"])
-        st.session_state["msg_ok"] = None
+        # a limpeza vem pelo reset de 4s (tick)
 
-    # ================================
     # Últimos 10
-    # ================================
     st.markdown("### 📋 Últimos 10 Apontamentos")
     if not df_filtrado.empty:
         ultimos = df_filtrado.sort_values("data_hora", ascending=False).head(10).copy()
@@ -679,12 +734,10 @@ def pagina_apontamento():
         st.info("Nenhum apontamento encontrado.")
 
 
-
 # ==============================
 # APP PRINCIPAL
 # ==============================
 def app():
-    st.set_page_config(page_title="Controle de Qualidade", layout="wide")
     login()
 
     menu = st.sidebar.selectbox("Menu", ["Apontamento", "Inspeção de Qualidade", "Reinspeção"])

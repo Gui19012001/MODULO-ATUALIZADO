@@ -11,12 +11,21 @@ from pathlib import Path
 import plotly.express as px
 import plotly.graph_objects as go
 
+# 🔥 PROTHEUS (SQL Server)
+import pyodbc
+from sqlalchemy import create_engine, text
+
 # ✅ evita NameError no seu try/except do salvar_checklist
 try:
     from supabase.lib.client_options import ClientOptions  # noqa: F401
     from postgrest.exceptions import APIError
 except Exception:
     APIError = Exception  # fallback para não quebrar
+
+# ==============================
+# ✅ PAGE CONFIG (TEM QUE SER A PRIMEIRA CHAMADA STREAMLIT)
+# ==============================
+st.set_page_config(page_title="Controle de Qualidade", layout="wide")
 
 # ================================
 # Verificação do autorefresh
@@ -37,12 +46,69 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# ==============================
+# ✅ CONEXÃO PROTHEUS (SEU PADRÃO)
+# ==============================
+@st.cache_resource
+def get_engine_protheus():
+    conn_str = (
+        "DRIVER={SQL Server};"
+        "SERVER=200.201.241.3;"
+        "DATABASE=PROTHEUSLOBO;"
+        "UID=leitura;"
+        "PWD=54321;"
+    )
+    return create_engine(
+        "mssql+pyodbc://",
+        creator=lambda: pyodbc.connect(conn_str)
+    )
+
+engine = get_engine_protheus()
+
 # =============================
 # Configurações iniciais
 # =============================
 TZ = pytz.timezone("America/Sao_Paulo")
 itens = ["Etiqueta", "Tambor + Parafuso", "Solda", "Pintura", "Borracha ABS"]
 usuarios = {"admin": "admin", "Maria": "maria", "Catia": "catia", "Vera": "vera", "Bruno": "bruno"}
+
+# =============================
+# PROTHEUS: Buscar OP pelo Nº de Série no SZA010
+# =============================
+@st.cache_data(ttl=30)
+def buscar_op_por_serie_sza(serie: str) -> str | None:
+    """
+    Busca a OP (ZA_OPEIX) pelo Nº de Série (ZA_SERIE) no SZA010.
+    Regra: D_E_L_E_T_ = '' e ZA_SERIE = serie.
+    """
+    serie = (serie or "").strip()
+    if not serie:
+        return None
+
+    # garantia de só número
+    if not serie.isdigit():
+        return None
+
+    q = text("""
+        SELECT TOP 1
+            LTRIM(RTRIM(ZA_OPEIX)) AS OP
+        FROM SZA010 WITH (NOLOCK)
+        WHERE D_E_L_E_T_ = ''
+          AND ZA_SERIE = :serie
+        ORDER BY R_E_C_N_O_ DESC
+    """)
+
+    try:
+        with engine.connect() as conn:
+            df = pd.read_sql(q, conn, params={"serie": serie})
+        if df.empty:
+            return None
+        op = df.iloc[0].get("OP")
+        op = (str(op).strip() if op is not None else "")
+        return op or None
+    except Exception:
+        # se der erro no SQL, melhor retornar None e o app mostra mensagem
+        return None
 
 # =============================
 # Funções do Supabase
@@ -129,7 +195,7 @@ def carregar_apontamentos():
             supabase.table("apontamentos")
             .select("*")
             .order("data_hora", desc=True)
-            .limit(2000)  # ajuste se quiser 1000/3000
+            .limit(2000)
             .execute()
         )
 
@@ -143,8 +209,6 @@ def carregar_apontamentos():
     except Exception as e:
         st.error(f"Erro ao carregar apontamentos: {e}")
         return pd.DataFrame()
-
-
 
 
 # ✅ ATUALIZADO (rápido e sem select *)
@@ -327,7 +391,7 @@ def checklist_qualidade(numero_serie, usuario):
             st.warning("⏳ Salvamento em andamento... aguarde.")
             return
 
-        st.session_state.checklist_bloqueado = True  # ✅ corrigido (tinha typo no seu texto)
+        st.session_state.checklist_bloqueado = True
 
         faltando = [i for i, resp in resultados.items() if resp is None]
         modelos_faltando = [i for i in opcoes_modelos if modelos.get(i) is None or modelos[i] == ""]
@@ -483,7 +547,7 @@ def checklist_reinspecao(numero_serie, usuario):
 
 
 # ================================
-# Página de Apontamento (ESTILO MOLA: 1 leitor, salva automático)
+# Página de Apontamento (AGORA: só Série -> busca OP no SZA -> salva)
 # ================================
 def pagina_apontamento():
     st.markdown("#  Registrar Apontamento")
@@ -546,21 +610,21 @@ def pagina_apontamento():
         )
 
     # ================================
-    # Estados (estilo MOLA)
+    # Estados (agora só Série)
     # ================================
     if "input_leitor_apont" not in st.session_state:
         st.session_state["input_leitor_apont"] = ""
     if "serie_pendente" not in st.session_state:
         st.session_state["serie_pendente"] = ""
-    if "op_pendente" not in st.session_state:
-        st.session_state["op_pendente"] = ""
+    if "op_encontrada" not in st.session_state:
+        st.session_state["op_encontrada"] = ""
     if "erro_apont" not in st.session_state:
         st.session_state["erro_apont"] = None
     if "msg_ok" not in st.session_state:
         st.session_state["msg_ok"] = None
 
     # ================================
-    # Callback do leitor (OP 11 / Série 9)
+    # Callback do leitor (SÓ SÉRIE 9 -> busca OP no SZA)
     # ================================
     def processar_leitura_apont():
         leitura = (st.session_state.get("input_leitor_apont") or "").strip()
@@ -578,63 +642,67 @@ def pagina_apontamento():
             return
 
         # Série (9)
-        if len(leitura) == 9:
-            st.session_state["serie_pendente"] = leitura
-            st.session_state["msg_ok"] = "✅ Série lida. Agora bipe a OP (11 dígitos)."
-
-        # OP (11)
-        elif len(leitura) == 11:
-            st.session_state["op_pendente"] = leitura
-            st.session_state["msg_ok"] = "✅ OP lida. Agora bipe a Série (9 dígitos)."
-
-        else:
-            st.session_state["erro_apont"] = "⚠️ Código inválido. Série = 9 dígitos | OP = 11 dígitos."
+        if len(leitura) != 9:
+            st.session_state["erro_apont"] = "⚠️ Código inválido. Neste módulo, use apenas Nº de Série (9 dígitos)."
             st.session_state["input_leitor_apont"] = ""
             return
 
-        # se já tem os dois, salva automático
-        serie = (st.session_state.get("serie_pendente") or "").strip()
-        op = (st.session_state.get("op_pendente") or "").strip()
+        serie = leitura
+        st.session_state["serie_pendente"] = serie
 
-        if serie and op:
-            sucesso = salvar_apontamento(serie, op, tipo_producao)
+        # busca OP no SZA010
+        op = buscar_op_por_serie_sza(serie)
 
-            if sucesso:
-                st.session_state["msg_ok"] = f"✅ Apontado: Série {serie} | OP {op}. Próximo!"
-                st.session_state["erro_apont"] = None
+        if not op:
+            st.session_state["op_encontrada"] = ""
+            st.session_state["erro_apont"] = (
+                f"⚠️ Não encontrei OP no SZA (SZA010) para a Série {serie}. "
+                "Verifique se já foi apontada no SZA/relatório."
+            )
+            st.session_state["input_leitor_apont"] = ""
+            return
 
-                # limpa para o próximo ciclo
-                st.session_state["serie_pendente"] = ""
-                st.session_state["op_pendente"] = ""
+        st.session_state["op_encontrada"] = op
 
-                # atualiza painel
-                st.cache_data.clear()
-            else:
-                st.session_state["erro_apont"] = f"⚠️ Série {serie} já registrada hoje ou erro ao salvar."
-                st.session_state["msg_ok"] = None
-                # mantém OP (geralmente continua a mesma) e limpa só a série pra re-bipar
-                st.session_state["serie_pendente"] = ""
+        # salva automático
+        sucesso = salvar_apontamento(serie, op, tipo_producao)
+
+        if sucesso:
+            st.session_state["msg_ok"] = f"✅ Apontado: Série {serie} | OP {op}. Próximo!"
+            st.session_state["erro_apont"] = None
+
+            # limpa para o próximo ciclo
+            st.session_state["serie_pendente"] = ""
+            st.session_state["op_encontrada"] = ""
+
+            # atualiza painel
+            st.cache_data.clear()
+        else:
+            st.session_state["erro_apont"] = f"⚠️ Série {serie} já registrada hoje ou erro ao salvar."
+            st.session_state["msg_ok"] = None
+            # mantém op encontrada só pra mostrar, mas libera próxima leitura
+            st.session_state["serie_pendente"] = ""
 
         # limpa o input sempre
         st.session_state["input_leitor_apont"] = ""
 
     # ================================
-    # UI: 1 input de leitor (igual MOLA)
+    # UI: 1 input de leitor
     # ================================
     st.text_input(
         "Leitor",
         key="input_leitor_apont",
-        placeholder="Aproxime o leitor (Série 9 / OP 11)...",
+        placeholder="Aproxime o leitor (Nº de Série 9 dígitos)...",
         label_visibility="collapsed",
         on_change=processar_leitura_apont,
     )
 
-    # ✅ foco contínuo (igual MOLA)
+    # ✅ foco contínuo
     components.html(
         """
         <script>
         function focarInput(){
-            const input = window.parent.document.querySelector('input[placeholder="Aproxime o leitor (Série 9 / OP 11)..."]');
+            const input = window.parent.document.querySelector('input[placeholder="Aproxime o leitor (Nº de Série 9 dígitos)..."]');
             if(input){ input.focus(); }
         }
         focarInput();
@@ -648,11 +716,11 @@ def pagina_apontamento():
     )
 
     # ================================
-    # Mostra pendências (feedback pro operador)
+    # Feedback pro operador
     # ================================
     col1, col2, col3 = st.columns([2, 2, 2])
     col1.markdown(f"📦 Série: **{st.session_state.get('serie_pendente') or '-'}**")
-    col2.markdown(f"🧾 OP: **{st.session_state.get('op_pendente') or '-'}**")
+    col2.markdown(f"🧾 OP (SZA): **{st.session_state.get('op_encontrada') or '-'}**")
     col3.markdown(f"🏷️ Tipo: **{tipo_producao}**")
 
     if st.session_state.get("erro_apont"):
@@ -679,12 +747,10 @@ def pagina_apontamento():
         st.info("Nenhum apontamento encontrado.")
 
 
-
 # ==============================
 # APP PRINCIPAL
 # ==============================
 def app():
-    st.set_page_config(page_title="Controle de Qualidade", layout="wide")
     login()
 
     menu = st.sidebar.selectbox("Menu", ["Apontamento", "Inspeção de Qualidade", "Reinspeção"])
@@ -744,6 +810,5 @@ def app():
 # ==============================
 if __name__ == "__main__":
     app()
-
 
 

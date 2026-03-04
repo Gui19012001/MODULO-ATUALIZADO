@@ -493,8 +493,8 @@ def pagina_apontamento():
     st.markdown("#  Registrar Apontamento")
     st.markdown("### ⏱️ Produção Hora a Hora")
 
-    OP_TIMEOUT_SEG = 4
-    RESET_TIMEOUT_SEG = 4
+    OP_TIMEOUT_SEG = 10
+    RESET_TIMEOUT_SEG = 10
 
     @st.cache_data(ttl=15)
     def carregar_apontamentos_cache():

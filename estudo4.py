@@ -156,23 +156,15 @@ def salvar_apontamento(serie, op, tipo_producao=None):
     serie = str(serie).strip()
     op = str(op).strip()
 
-    # janela do "hoje" em SP, convertida para UTC
-    hoje_sp = datetime.datetime.now(TZ).date()
-    inicio_sp = TZ.localize(datetime.datetime.combine(hoje_sp, datetime.time.min))
-    fim_sp = TZ.localize(datetime.datetime.combine(hoje_sp, datetime.time.max))
-    inicio_utc = inicio_sp.astimezone(pytz.UTC).isoformat()
-    fim_utc = fim_sp.astimezone(pytz.UTC).isoformat()
-
-    # checagem leve
+    # checa na tabela inteira, não apenas hoje
     response = (
         supabase.table("apontamentos")
         .select("id")
         .eq("numero_serie", serie)
-        .gte("data_hora", inicio_utc)
-        .lte("data_hora", fim_utc)
         .limit(1)
         .execute()
     )
+
     if response.data:
         return False
 
@@ -181,6 +173,7 @@ def salvar_apontamento(serie, op, tipo_producao=None):
         "op": op,
         "data_hora": datetime.datetime.now(pytz.UTC).isoformat(),
     }
+
     if tipo_producao is not None:
         dados["tipo_producao"] = tipo_producao
 
